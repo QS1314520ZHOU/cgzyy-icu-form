@@ -13,6 +13,7 @@ import { LogService } from './log.service';
  * 3. 注册生命周期事件（visibilitychange/focus/pageshow）
  * 4. 患者切换检测（patientKey = id || mrn || hisPid）
  * 5. NgZone.run 内更新状态，触发变更检测
+ * 6. 轮询机制：定期向宿主请求数据，覆盖"刷新后宿主不响应"场景
  */
 @Injectable({
   providedIn: 'root'
@@ -32,6 +33,13 @@ export class MessageService {
   private currentPatientKey = '';
   private isPlaceholder = false;
   private initialized = false;
+  private lastRequestTime = 0;
+  private lastResponseTime = 0;
+  private pollTimer: any = null;
+
+  // ── 配置 ──────────────────────────────────────────────
+  private readonly POLL_INTERVAL = 3000;  // 轮询间隔（毫秒）
+  private readonly REQUEST_COOLDOWN = 1000;  // 请求冷却时间（毫秒）
 
   // ── origin 白名单 ─────────────────────────────────────
   private readonly ORIGIN_WHITELIST = [
@@ -66,6 +74,9 @@ export class MessageService {
 
     // 4. 请求数据
     this.requestData('init');
+
+    // 5. 启动轮询
+    this.startPolling();
   }
 
   // ── 注册消息监听（常驻）────────────────────────────────
@@ -100,6 +111,9 @@ export class MessageService {
         if (type === 'SmartCare' && patient) {
           const patientKey = this.getPatientKey(patient);
           this.logService.add(`[收到] SmartCare 消息, patientKey=${patientKey}`, 'success');
+
+          // 记录响应时间
+          this.lastResponseTime = Date.now();
 
           // 无条件处理
           this.processData({ account, patient, token });
@@ -138,9 +152,58 @@ export class MessageService {
     });
   }
 
+  // ── 启动轮询 ──────────────────────────────────────────
+  private startPolling(): void {
+    if (this.pollTimer) {
+      return;  // 已经在轮询
+    }
+
+    this.logService.add(`[轮询] 启动，间隔 ${this.POLL_INTERVAL}ms`, 'info');
+
+    this.pollTimer = setInterval(() => {
+      // 如果页面不可见，跳过本次轮询
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+
+      // 如果刚收到响应，跳过本次轮询（避免频繁请求）
+      const now = Date.now();
+      if (this.lastResponseTime && (now - this.lastResponseTime < this.POLL_INTERVAL * 2)) {
+        return;
+      }
+
+      // 如果刚发过请求，跳过本次轮询（避免频繁请求）
+      if (this.lastRequestTime && (now - this.lastRequestTime < this.REQUEST_COOLDOWN)) {
+        return;
+      }
+
+      this.logService.add('[轮询] 向宿主请求数据', 'info');
+      this.requestData('poll');
+    }, this.POLL_INTERVAL);
+  }
+
+  // ── 停止轮询 ──────────────────────────────────────────
+  private stopPolling(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+      this.logService.add('[轮询] 停止', 'info');
+    }
+  }
+
   // ── 请求数据 ──────────────────────────────────────────
   requestData(reason: string): void {
+    const now = Date.now();
+
+    // 冷却时间检查（避免频繁请求）
+    if (this.lastRequestTime && (now - this.lastRequestTime < this.REQUEST_COOLDOWN)) {
+      this.logService.add(`[请求] 冷却中，跳过 reason=${reason}`, 'info');
+      return;
+    }
+
+    this.lastRequestTime = now;
     this.logService.add(`[请求] 向外层请求数据, reason=${reason}`, 'info');
+
     try {
       const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
       if (target) {
@@ -239,5 +302,10 @@ export class MessageService {
 
     // 同步给内层
     this.forwardToIframe(cached.data);
+  }
+
+  // ── 销毁时清理 ─────────────────────────────────────────
+  ngOnDestroy(): void {
+    this.stopPolling();
   }
 }
