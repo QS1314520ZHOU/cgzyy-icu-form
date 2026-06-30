@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>父页面 - iframe通信示例</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      background: #f5f7fa;
+      color: #333;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+
+    .header h1 {
+      font-size: 28px;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      opacity: 0.9;
+      font-size: 14px;
+    }
+
+    .main-content {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 20px;
+    }
+
+    .control-panel {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+
+    .control-panel h2 {
+      font-size: 18px;
+      margin-bottom: 20px;
+      color: #4a5568;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 10px;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #718096;
+      margin-bottom: 6px;
+    }
+
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .btn {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: #edf2f7;
+      color: #4a5568;
+    }
+
+    .btn-secondary:hover {
+      background: #e2e8f0;
+    }
+
+    .btn-danger {
+      background: #fc8181;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #f56565;
+    }
+
+    .btn-success {
+      background: #68d391;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #48bb78;
+    }
+
+    .iframe-container {
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+
+    .iframe-header {
+      background: #f7fafc;
+      padding: 15px 20px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .iframe-header h3 {
+      font-size: 16px;
+      color: #4a5568;
+    }
+
+    .iframe-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #e2e8f0;
+    }
+
+    .status-dot.connected {
+      background: #48bb78;
+      animation: pulse 2s infinite;
+    }
+
+    .status-dot.disconnected {
+      background: #fc8181;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .iframe-wrapper {
+      position: relative;
+      width: 100%;
+      height: 600px;
+    }
+
+    .iframe-wrapper iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .log-panel {
+      margin-top: 20px;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+
+    .log-header {
+      background: #f7fafc;
+      padding: 15px 20px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .log-header h3 {
+      font-size: 16px;
+      color: #4a5568;
+    }
+
+    .log-content {
+      padding: 20px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      background: #1a202c;
+      color: #e2e8f0;
+    }
+
+    .log-entry {
+      margin-bottom: 8px;
+      padding: 8px;
+      border-radius: 4px;
+      background: #2d3748;
+    }
+
+    .log-entry.success {
+      border-left: 3px solid #48bb78;
+    }
+
+    .log-entry.info {
+      border-left: 3px solid #4299e1;
+    }
+
+    .log-entry.warning {
+      border-left: 3px solid #ecc94b;
+    }
+
+    .log-entry.error {
+      border-left: 3px solid #fc8181;
+    }
+
+    .log-time {
+      color: #718096;
+      font-size: 11px;
+    }
+
+    .log-message {
+      margin-top: 4px;
+    }
+
+    .sample-data {
+      background: #f7fafc;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 15px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .sample-data h4 {
+      font-size: 14px;
+      color: #4a5568;
+      margin-bottom: 10px;
+    }
+
+    .sample-data pre {
+      background: #2d3748;
+      color: #e2e8f0;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    @media (max-width: 1024px) {
+      .main-content {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>父页面 - iframe通信示例</h1>
+      <p>演示如何通过postMessage与嵌入的iframe页面进行通信，实现数据传递、缓存管理和生命周期控制</p>
+    </div>
+
+    <div class="main-content">
+      <div class="control-panel">
+        <h2>控制面板</h2>
+
+        <div class="form-group">
+          <label>账号ID</label>
+          <input type="text" id="accountId" value="6a323a1b9901235b28fcb5c1" />
+        </div>
+
+        <div class="form-group">
+          <label>用户名</label>
+          <input type="text" id="username" value="admin" />
+        </div>
+
+        <div class="form-group">
+          <label>真实姓名</label>
+          <input type="text" id="trueName" value="工程师" />
+        </div>
+
+        <div class="form-group">
+          <label>科室编码</label>
+          <input type="text" id="departmentCode" value="125011" />
+        </div>
+
+        <div class="form-group">
+          <label>科室名称</label>
+          <input type="text" id="dept" value="重症医学科" />
+        </div>
+
+        <div class="form-group">
+          <label>床位号</label>
+          <input type="text" id="hisBed" value="10床" />
+        </div>
+
+        <div class="form-group">
+          <label>患者ID</label>
+          <input type="text" id="hisPid" value="0000909733" />
+        </div>
+
+        <div class="form-group">
+          <label>患者姓名</label>
+          <input type="text" id="patientName" value="张丹" />
+        </div>
+
+        <div class="form-group">
+          <label>住院号</label>
+          <input type="text" id="mrn" value="0126060008" />
+        </div>
+
+        <div class="btn-group">
+          <button class="btn btn-primary" id="btnSendData">发送数据到iframe</button>
+          <button class="btn btn-success" id="btnLoadSample">加载示例数据</button>
+          <button class="btn btn-secondary" id="btnRefresh">刷新iframe</button>
+          <button class="btn btn-danger" id="btnClose">关闭并清除缓存</button>
+        </div>
+
+        <div class="sample-data">
+          <h4>当前数据预览</h4>
+          <pre id="dataPreview">{}</pre>
+        </div>
+      </div>
+
+      <div class="iframe-container">
+        <div class="iframe-header">
+          <h3>嵌入的iframe页面</h3>
+          <div class="iframe-status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">未连接</span>
+          </div>
+        </div>
+        <div class="iframe-wrapper">
+          <iframe id="childFrame" src="/print"></iframe>
+        </div>
+      </div>
+    </div>
+
+    <div class="log-panel">
+      <div class="log-header">
+        <h3>通信日志</h3>
+        <button class="btn btn-secondary" id="btnClearLog">清空日志</button>
+      </div>
+      <div class="log-content" id="logContent"></div>
+    </div>
+  </div>
+
+  <script>
+    // 全局变量
+    const STORAGE_KEY = 'ICU_PRINT_DATA';
+    const STORAGE_TIME_KEY = 'ICU_PRINT_DATA_UPDATED_AT';
+    const READY_EVENT = 'PRINT_PAGE_READY';
+    const REQUEST_EVENT = 'PRINT_PAGE_REQUEST_DATA';
+    const RECEIVED_EVENT = 'PRINT_DATA_RECEIVED';
+
+    let isIframeReady = false;
+    let pendingData = null;
+
+    // DOM元素
+    const elements = {
+      childFrame: document.getElementById('childFrame'),
+      statusDot: document.getElementById('statusDot'),
+      statusText: document.getElementById('statusText'),
+      logContent: document.getElementById('logContent'),
+      dataPreview: document.getElementById('dataPreview'),
+      btnSendData: document.getElementById('btnSendData'),
+      btnLoadSample: document.getElementById('btnLoadSample'),
+      btnRefresh: document.getElementById('btnRefresh'),
+      btnClose: document.getElementById('btnClose'),
+      btnClearLog: document.getElementById('btnClearLog'),
+    };
+
+    // 输入框元素
+    const inputs = {
+      accountId: document.getElementById('accountId'),
+      username: document.getElementById('username'),
+      trueName: document.getElementById('trueName'),
+      departmentCode: document.getElementById('departmentCode'),
+      dept: document.getElementById('dept'),
+      hisBed: document.getElementById('hisBed'),
+      hisPid: document.getElementById('hisPid'),
+      patientName: document.getElementById('patientName'),
+      mrn: document.getElementById('mrn'),
+    };
+
+    // 初始化
+    function init() {
+      bindEvents();
+      updateDataPreview();
+      addLog('父页面已初始化，等待iframe连接...', 'info');
+    }
+
+    // 绑定事件
+    function bindEvents() {
+      // 监听iframe消息
+      window.addEventListener('message', handleIframeMessage);
+
+      // 按钮事件
+      elements.btnSendData.addEventListener('click', sendDataToIframe);
+      elements.btnLoadSample.addEventListener('click', loadSampleData);
+      elements.btnRefresh.addEventListener('click', refreshIframe);
+      elements.btnClose.addEventListener('click', closeAndClear);
+      elements.btnClearLog.addEventListener('click', clearLog);
+
+      // 输入框变化时更新预览
+      Object.values(inputs).forEach(input => {
+        input.addEventListener('input', updateDataPreview);
+      });
+
+      // iframe加载完成
+      elements.childFrame.addEventListener('load', () => {
+        addLog('iframe页面已加载', 'success');
+        // iframe加载后会自动发送READY事件
+      });
+    }
+
+    // 处理iframe消息
+    function handleIframeMessage(event) {
+      // 验证消息来源
+      if (event.source !== elements.childFrame.contentWindow) {
+        return;
+      }
+
+      const { type, payload } = event.data;
+
+      switch (type) {
+        case READY_EVENT:
+          handleIframeReady(payload);
+          break;
+
+        case REQUEST_EVENT:
+          handleIframeRequest(payload);
+          break;
+
+        case RECEIVED_EVENT:
+          handleDataReceived(payload);
+          break;
+
+        default:
+          addLog(`收到未知消息类型: ${type}`, 'warning');
+      }
+    }
+
+    // 处理iframe就绪事件
+    function handleIframeReady(payload) {
+      isIframeReady = true;
+      updateConnectionStatus(true);
+      addLog('iframe页面已就绪，可以接收数据', 'success');
+
+      // 如果有待发送的数据，立即发送
+      if (pendingData) {
+        sendDataToIframe();
+        pendingData = null;
+      }
+    }
+
+    // 处理iframe数据请求
+    function handleIframeRequest(payload) {
+      const reason = payload?.reason || '未知';
+      const fields = payload?.requiredFields || [];
+      addLog(`iframe请求数据，原因: ${reason}，请求字段: ${fields.length}个`, 'info');
+
+      // 收集并发送数据
+      sendDataToIframe();
+    }
+
+    // 处理数据接收确认
+    function handleDataReceived(payload) {
+      if (payload?.ok) {
+        addLog('iframe已成功接收数据', 'success');
+      } else {
+        addLog(`iframe接收数据失败: ${payload?.error || '未知错误'}`, 'error');
+      }
+    }
+
+    // 发送数据到iframe
+    function sendDataToIframe() {
+      if (!isIframeReady) {
+        addLog('iframe未就绪，无法发送数据', 'error');
+        return;
+      }
+
+      const data = collectFormData();
+      const message = {
+        type: 'PRINT_DATA',
+        payload: data,
+      };
+
+      try {
+        elements.childFrame.contentWindow.postMessage(message, '*');
+        addLog('已发送数据到iframe', 'success');
+        console.log('发送的数据:', data);
+      } catch (error) {
+        addLog(`发送数据失败: ${error.message}`, 'error');
+      }
+    }
+
+    // 收集表单数据
+    function collectFormData() {
+      return {
+        type: 'SmartCare',
+        account: {
+          id: inputs.accountId.value,
+          username: inputs.username.value,
+          trueName: inputs.trueName.value,
+          departmentCode: inputs.departmentCode.value,
+        },
+        patient: {
+          dept: inputs.dept.value,
+          deptCode: inputs.departmentCode.value,
+          hisBed: inputs.hisBed.value,
+          hisPid: inputs.hisPid.value,
+          id: '6a30b9c417e2ec06e618d50b',
+          mrn: inputs.mrn.value,
+          name: inputs.patientName.value,
+          clinicalDiagnosis: null,
+        },
+      };
+    }
+
+    // 加载示例数据
+    function loadSampleData() {
+      inputs.accountId.value = '6a323a1b9901235b28fcb5c1';
+      inputs.username.value = 'admin';
+      inputs.trueName.value = '工程师';
+      inputs.departmentCode.value = '125011';
+      inputs.dept.value = '重症医学科';
+      inputs.hisBed.value = '10床';
+      inputs.hisPid.value = '0000909733';
+      inputs.patientName.value = '张丹';
+      inputs.mrn.value = '0126060008';
+
+      updateDataPreview();
+      addLog('已加载示例数据', 'info');
+
+      // 自动发送
+      if (isIframeReady) {
+        sendDataToIframe();
+      }
+    }
+
+    // 刷新iframe
+    function refreshIframe() {
+      addLog('正在刷新iframe...', 'info');
+      isIframeReady = false;
+      updateConnectionStatus(false);
+
+      // 重新加载iframe
+      elements.childFrame.src = elements.childFrame.src;
+    }
+
+    // 关闭并清除缓存
+    function closeAndClear() {
+      addLog('正在关闭iframe并清除缓存...', 'warning');
+
+      // 通知iframe清除数据
+      if (isIframeReady) {
+        try {
+          elements.childFrame.contentWindow.postMessage({
+            type: 'CLEAR_DATA',
+            payload: { reason: 'parent_close' },
+          }, '*');
+        } catch (error) {
+          console.error('通知iframe清除数据失败:', error);
+        }
+      }
+
+      // 清除本地存储
+      try {
+        sessionStorage.removeItem(STORAGE_KEY);
+        sessionStorage.removeItem(STORAGE_TIME_KEY);
+        addLog('已清除本地缓存', 'success');
+      } catch (error) {
+        addLog(`清除缓存失败: ${error.message}`, 'error');
+      }
+
+      // 隐藏iframe
+      elements.childFrame.style.display = 'none';
+      isIframeReady = false;
+      updateConnectionStatus(false);
+      addLog('iframe已关闭', 'warning');
+    }
+
+    // 更新数据预览
+    function updateDataPreview() {
+      const data = collectFormData();
+      elements.dataPreview.textContent = JSON.stringify(data, null, 2);
+    }
+
+    // 更新连接状态
+    function updateConnectionStatus(connected) {
+      elements.statusDot.className = `status-dot ${connected ? 'connected' : 'disconnected'}`;
+      elements.statusText.textContent = connected ? '已连接' : '未连接';
+    }
+
+    // 添加日志
+    function addLog(message, type = 'info') {
+      const time = new Date().toLocaleTimeString('zh-CN');
+      const logEntry = document.createElement('div');
+      logEntry.className = `log-entry ${type}`;
+      logEntry.innerHTML = `
+        <div class="log-time">${time}</div>
+        <div class="log-message">${message}</div>
+      `;
+      elements.logContent.appendChild(logEntry);
+      elements.logContent.scrollTop = elements.logContent.scrollHeight;
+    }
+
+    // 清空日志
+    function clearLog() {
+      elements.logContent.innerHTML = '';
+      addLog('日志已清空', 'info');
+    }
+
+    // 页面加载时初始化
+    window.addEventListener('DOMContentLoaded', init);
+
+    // 页面关闭时清除缓存
+    window.addEventListener('beforeunload', () => {
+      try {
+        sessionStorage.removeItem(STORAGE_KEY);
+        sessionStorage.removeItem(STORAGE_TIME_KEY);
+      } catch (error) {
+        console.error('清除缓存失败:', error);
+      }
+    });
+  </script>
+</body>
+</html>

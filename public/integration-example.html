@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>前端应用集成示例</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Microsoft YaHei", sans-serif; background: #f5f5f5; padding: 20px; }
+
+    .app-header {
+      background: #2563eb;
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .app-header h1 { font-size: 24px; margin-bottom: 8px; }
+    .app-header p { opacity: 0.9; font-size: 14px; }
+
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .panel h2 {
+      font-size: 16px;
+      color: #333;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .form-group { margin-bottom: 14px; }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .btn-group { display: flex; gap: 10px; margin-top: 16px; }
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-success { background: #10b981; color: white; }
+    .btn-success:hover { background: #059669; }
+
+    .iframe-wrapper {
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+      background: white;
+    }
+    .iframe-toolbar {
+      background: #f9fafb;
+      padding: 10px 16px;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .iframe-toolbar span { font-size: 14px; color: #666; }
+    .iframe-content { height: 500px; }
+    .iframe-content iframe { width: 100%; height: 100%; border: none; }
+
+    .log-panel {
+      margin-top: 20px;
+      grid-column: 1 / -1;
+    }
+    .log-content {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 16px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 13px;
+      max-height: 200px;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+    .log-entry { margin-bottom: 4px; }
+    .log-entry.request { color: #60a5fa; }
+    .log-entry.send { color: #4ade80; }
+    .log-entry.clear { color: #fbbf24; }
+
+    .code-example {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 16px;
+      margin-top: 16px;
+      font-size: 13px;
+    }
+    .code-example h3 {
+      font-size: 14px;
+      color: #475569;
+      margin-bottom: 12px;
+    }
+    .code-example pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 12px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-header">
+    <h1>前端应用集成示例</h1>
+    <p>演示如何在宿主页面中响应iframe的数据请求</p>
+  </div>
+
+  <div class="container">
+    <div class="panel">
+      <h2>宿主页面数据（父页面）</h2>
+      <div class="form-group">
+        <label>账号ID</label>
+        <input type="text" id="accountId" value="6a323a1b9901235b28fcb5c1" />
+      </div>
+      <div class="form-group">
+        <label>用户名</label>
+        <input type="text" id="username" value="admin" />
+      </div>
+      <div class="form-group">
+        <label>真实姓名</label>
+        <input type="text" id="trueName" value="工程师" />
+      </div>
+      <div class="form-group">
+        <label>科室编码</label>
+        <input type="text" id="deptCode" value="125011" />
+      </div>
+      <div class="form-group">
+        <label>科室名称</label>
+        <input type="text" id="dept" value="重症医学科" />
+      </div>
+      <div class="form-group">
+        <label>床位号</label>
+        <input type="text" id="hisBed" value="10床" />
+      </div>
+      <div class="form-group">
+        <label>患者ID</label>
+        <input type="text" id="hisPid" value="0000909733" />
+      </div>
+      <div class="form-group">
+        <label>患者姓名</label>
+        <input type="text" id="patientName" value="张丹" />
+      </div>
+      <div class="form-group">
+        <label>住院号</label>
+        <input type="text" id="mrn" value="0126060008" />
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="openIframe()">打开iframe</button>
+        <button class="btn btn-danger" onclick="closeIframe()">关闭并清除缓存</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>iframe嵌入区域</h2>
+      <div class="iframe-wrapper">
+        <div class="iframe-toolbar">
+          <span>状态: <strong id="status">未打开</strong></span>
+          <button class="btn btn-success" onclick="reloadIframe()">重新加载</button>
+        </div>
+        <div class="iframe-content" id="iframeContainer">
+          <p style="padding: 20px; color: #999; text-align: center;">点击"打开iframe"加载页面</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel log-panel">
+      <h2>通信日志</h2>
+      <div class="log-content" id="logContent"></div>
+    </div>
+
+    <div class="panel code-example">
+      <h3>父页面核心代码（在你的前端应用中使用）</h3>
+      <pre><code>// 1. 监听iframe的消息
+window.addEventListener('message', (event) => {
+  const { type, payload } = event.data;
+
+  // iframe请求数据
+  if (type === 'PRINT_PAGE_REQUEST_DATA') {
+    console.log('iframe请求数据:', payload);
+
+    // 2. 获取当前页面的通用数据
+    const currentData = getCurrentData(); // 你的业务数据
+
+    // 3. 发送给iframe
+    event.source.postMessage({
+      type: 'PRINT_DATA',
+      payload: currentData
+    }, '*');
+  }
+
+  // iframe数据接收确认
+  if (type === 'PRINT_DATA_RECEIVED') {
+    console.log('iframe已接收数据:', payload);
+  }
+});
+
+// 4. 关闭iframe时清除缓存
+function closeIframe() {
+  iframe.contentWindow.postMessage({
+    type: 'CLEAR_DATA',
+    payload: { reason: 'parent_close' }
+  }, '*');
+}
+
+// 5. 打开iframe（会自动请求数据）
+function openIframe() {
+  iframe.src = 'http://localhost:3000/print';
+}</code></pre>
+    </div>
+  </div>
+
+  <script>
+    let iframe = null;
+    let isReady = false;
+
+    // 监听iframe消息
+    window.addEventListener('message', handleIframeMessage);
+
+    function handleIframeMessage(event) {
+      // 验证来源
+      if (!iframe || event.source !== iframe.contentWindow) return;
+
+      const { type, payload } = event.data;
+
+      switch (type) {
+        case 'PRINT_PAGE_READY':
+          addLog('iframe已就绪', 'send');
+          isReady = true;
+          document.getElementById('status').textContent = '已连接';
+          break;
+
+        case 'PRINT_PAGE_REQUEST_DATA':
+          addLog(`iframe请求数据，原因: ${payload?.reason}`, 'request');
+          // 收到请求后发送数据
+          sendDataToIframe();
+          break;
+
+        case 'PRINT_DATA_RECEIVED':
+          addLog(`数据接收: ${payload?.ok ? '成功' : '失败'}`, 'send');
+          break;
+      }
+    }
+
+    function sendDataToIframe() {
+      if (!iframe || !isReady) return;
+
+      const data = {
+        type: 'SmartCare',
+        account: {
+          id: document.getElementById('accountId').value,
+          username: document.getElementById('username').value,
+          trueName: document.getElementById('trueName').value,
+          departmentCode: document.getElementById('deptCode').value,
+        },
+        patient: {
+          dept: document.getElementById('dept').value,
+          deptCode: document.getElementById('deptCode').value,
+          hisBed: document.getElementById('hisBed').value,
+          hisPid: document.getElementById('hisPid').value,
+          id: '6a30b9c417e2ec06e618d50b',
+          mrn: document.getElementById('mrn').value,
+          name: document.getElementById('patientName').value,
+          clinicalDiagnosis: null,
+        },
+      };
+
+      iframe.contentWindow.postMessage({
+        type: 'PRINT_DATA',
+        payload: data,
+      }, '*');
+
+      addLog('已发送数据到iframe', 'send');
+    }
+
+    function openIframe() {
+      if (iframe) {
+        addLog('iframe已存在，请先关闭', 'clear');
+        return;
+      }
+
+      addLog('正在打开iframe...', 'request');
+
+      const container = document.getElementById('iframeContainer');
+      container.innerHTML = '';
+
+      iframe = document.createElement('iframe');
+      iframe.src = '/print';
+      container.appendChild(iframe);
+
+      document.getElementById('status').textContent = '加载中...';
+    }
+
+    function closeIframe() {
+      if (!iframe) {
+        addLog('iframe未打开', 'clear');
+        return;
+      }
+
+      addLog('正在关闭iframe并清除缓存...', 'clear');
+
+      // 通知iframe清除数据
+      if (isReady) {
+        iframe.contentWindow.postMessage({
+          type: 'CLEAR_DATA',
+          payload: { reason: 'parent_close' },
+        }, '*');
+      }
+
+      // 移除iframe
+      const container = document.getElementById('iframeContainer');
+      container.innerHTML = '<p style="padding: 20px; color: #999; text-align: center;">点击"打开iframe"加载页面</p>';
+
+      iframe = null;
+      isReady = false;
+      document.getElementById('status').textContent = '未打开';
+    }
+
+    function reloadIframe() {
+      if (!iframe) {
+        addLog('iframe未打开', 'clear');
+        return;
+      }
+
+      addLog('正在重新加载iframe...', 'request');
+      isReady = false;
+      iframe.src = iframe.src;
+      document.getElementById('status').textContent = '重新加载中...';
+    }
+
+    function addLog(message, type = '') {
+      const logContent = document.getElementById('logContent');
+      const time = new Date().toLocaleTimeString('zh-CN');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${time}] ${message}`;
+      logContent.appendChild(entry);
+      logContent.scrollTop = logContent.scrollHeight;
+    }
+
+    // 初始化
+    addLog('页面已加载，等待操作...', 'request');
+  </script>
+</body>
+</html>

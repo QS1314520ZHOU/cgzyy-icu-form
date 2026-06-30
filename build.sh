@@ -2,7 +2,7 @@
 set -euo pipefail
 
 IMAGE_TAG="${IMAGE_TAG:-icu-stats-oel8-builder:latest}"
-DOCKERFILE="${DOCKERFILE:-Dockerfile}"
+DOCKERFILE="${DOCKERFILE:-Dockerfile.oel8}"
 OUTPUT_DIR="${OUTPUT_DIR:-dist-oel8}"
 NODE_VERSION="${NODE_VERSION:-18.20.4}"
 PLATFORM="${PLATFORM:-linux/amd64}"
