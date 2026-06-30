@@ -1,0 +1,23 @@
+<div class="content-block">
+  <h3 class="section-title">账号信息</h3>
+  <div class="table-wrap">
+    <table class="field-table">
+      <thead>
+        <tr>
+          <th>字段</th>
+          <th>值</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let row of rows">
+          <td>{{ row.key }}</td>
+          <td>
+            <span *ngIf="row.value === '-'" class="null-value">-</span>
+            <pre *ngIf="row.value !== '-' && row.value.startsWith('{')" class="nested-json">{{ row.value }}</pre>
+            <span *ngIf="row.value !== '-' && !row.value.startsWith('{')">{{ row.value }}</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

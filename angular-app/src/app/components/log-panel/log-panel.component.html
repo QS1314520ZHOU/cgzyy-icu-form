@@ -1,0 +1,17 @@
+<section class="panel no-print">
+  <div class="panel-title-row">
+    <h2>通信日志</h2>
+    <button class="btn btn-muted btn-sm" type="button" (click)="onClearLog()">清空日志</button>
+  </div>
+  <div class="log-content">
+    <div
+      *ngFor="let log of logs"
+      class="log-entry"
+      [class.success]="log.type === 'success'"
+      [class.info]="log.type === 'info'"
+      [class.warning]="log.type === 'warning'"
+      [class.error]="log.type === 'error'">
+      <span class="log-time">[{{ log.time }}]</span> {{ log.message }}
+    </div>
+  </div>
+</section>

@@ -3,21 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>打印数据预览</title>
+  <title>数据预览</title>
   <link rel="stylesheet" href="/css/print.css" />
 </head>
 <body>
   <main class="print-page">
     <header class="hero no-print">
       <div class="hero-copy">
-        <p class="eyebrow">Iframe Print View</p>
-        <h1 id="pageTitle">打印数据预览</h1>
-        <p id="pageDesc" class="hero-desc">等待父页面通过 postMessage 发送打印数据。</p>
+        <p class="eyebrow">SmartCare Iframe View</p>
+        <h1 id="pageTitle">数据预览</h1>
+        <p id="pageDesc" class="hero-desc">等待宿主通过 postMessage 发送数据。</p>
       </div>
       <div class="hero-actions">
-        <button id="btnSample" class="btn btn-secondary" type="button">加载示例</button>
         <button id="btnClear" class="btn btn-muted" type="button">清空内容</button>
-        <button id="btnPrint" class="btn btn-primary" type="button">打印</button>
       </div>
     </header>
 
@@ -26,26 +24,32 @@
         <h2>消息状态</h2>
         <span id="messageState" class="state-badge">等待消息</span>
       </div>
-      <p class="panel-tip">父页面可以发送 <code>{ type: 'PRINT_DATA', payload: {...} }</code>，也支持直接发送对象。</p>
+      <p class="panel-tip">宿主发送 <code>{ type: 'PRINT_DATA', payload: {...} }</code>，也支持 <code>RESPONSE_DATA</code>。</p>
       <pre id="rawMessage" class="code-block">暂无消息</pre>
+    </section>
+
+    <section class="panel no-print">
+      <div class="panel-title-row">
+        <h2>通信日志</h2>
+        <button id="btnClearLog" class="btn btn-muted btn-sm" type="button">清空日志</button>
+      </div>
+      <div id="logContent" class="log-content"></div>
     </section>
 
     <section class="panel print-panel">
       <div class="panel-title-row">
-        <h2>打印内容</h2>
+        <h2>数据输出</h2>
         <span id="updatedAt" class="updated-at"></span>
       </div>
 
       <div id="emptyState" class="empty-state">
-        <p>当前还没有可打印的数据。</p>
-        <p>请从父页面通过 <code>postMessage</code> 传入数据。</p>
+        <p>当前还没有数据。</p>
+        <p>请从宿主通过 <code>postMessage</code> 传入数据。</p>
       </div>
 
       <div id="contentArea" class="content-area hidden">
-        <section id="summarySection" class="summary-grid"></section>
-
         <section class="content-block">
-          <h3>打印字段</h3>
+          <h3>字段列表</h3>
           <div class="table-wrap">
             <table class="print-table">
               <thead>
@@ -60,7 +64,7 @@
         </section>
 
         <section class="content-block">
-          <h3>原始数据</h3>
+          <h3>原始 JSON</h3>
           <pre id="jsonContent" class="code-block code-block-light">{}</pre>
         </section>
       </div>

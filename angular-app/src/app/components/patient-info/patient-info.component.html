@@ -1,0 +1,12 @@
+<section class="panel">
+  <div class="panel-title-row">
+    <h2>患者关键信息</h2>
+    <span class="updated-at">{{ updatedAt }}</span>
+  </div>
+  <div class="key-info-grid">
+    <article class="key-info-card" *ngFor="let item of keyInfoItems">
+      <div class="key-info-label">{{ item.label }}</div>
+      <div class="key-info-value" [class.small]="item.value.length > 15">{{ item.value }}</div>
+    </article>
+  </div>
+</section>

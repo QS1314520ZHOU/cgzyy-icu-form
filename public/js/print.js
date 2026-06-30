@@ -1,3 +1,22 @@
+// ★ 探针：在所有逻辑之前注册，捕获所有 postMessage
+window.addEventListener('message', function probeHandler(e) {
+  try {
+    var d = e.data;
+    var type = d && typeof d === 'object' ? d.type : typeof d;
+    var hasAccount = !!(d && d.account);
+    var hasPatient = !!(d && d.patient);
+    var payloadHasAccount = !!(d && d.payload && d.payload.account);
+    var payloadHasPatient = !!(d && d.payload && d.payload.patient);
+    console.log('[probe-print] origin=' + e.origin + ' type=' + type +
+      ' hasAccount=' + hasAccount + ' hasPatient=' + hasPatient +
+      ' payloadHasAccount=' + payloadHasAccount + ' payloadHasPatient=' + payloadHasPatient,
+      'data=', d);
+  } catch (err) {
+    console.log('[probe-print] origin=' + e.origin + ' parseError=' + err.message);
+  }
+}, false);
+
+// ── DOM 元素 ──────────────────────────────────────────────
 const els = {
   pageTitle: document.getElementById('pageTitle'),
   pageDesc: document.getElementById('pageDesc'),
@@ -6,177 +25,168 @@ const els = {
   updatedAt: document.getElementById('updatedAt'),
   emptyState: document.getElementById('emptyState'),
   contentArea: document.getElementById('contentArea'),
-  summarySection: document.getElementById('summarySection'),
   fieldBody: document.getElementById('fieldBody'),
   jsonContent: document.getElementById('jsonContent'),
-  btnSample: document.getElementById('btnSample'),
   btnClear: document.getElementById('btnClear'),
-  btnPrint: document.getElementById('btnPrint'),
+  logContent: document.getElementById('logContent'),
+  btnClearLog: document.getElementById('btnClearLog'),
 };
 
+// ── 常量 ──────────────────────────────────────────────────
 const STORAGE_KEY = 'ICU_PRINT_DATA';
 const STORAGE_TIME_KEY = 'ICU_PRINT_DATA_UPDATED_AT';
-const REQUEST_EVENT = 'PRINT_PAGE_REQUEST_DATA';
-const READY_EVENT = 'PRINT_PAGE_READY';
-const RECEIVED_EVENT = 'PRINT_DATA_RECEIVED';
-const DEFAULT_TITLE = '打印数据预览';
-const DEFAULT_DESC = '等待父页面通过 postMessage 发送打印数据。';
+const DEFAULT_TITLE = '数据预览';
+const DEFAULT_DESC = '等待宿主通过 postMessage 发送数据。';
 
-const sampleData = {
-  type: 'SmartCare',
-  account: {
-    id: '6a323a1b9901235b28fcb5c1',
-    username: 'admin',
-    trueName: '工程师',
-    departmentCode: '125011',
-  },
-  patient: {
-    dept: '重症医学科',
-    deptCode: '125011',
-    hisBed: '10床',
-    hisPid: '0000909733',
-    id: '6a30b9c417e2ec06e618d50b',
-    mrn: '0126060008',
-    name: '张丹',
-    clinicalDiagnosis: null,
-  },
-};
+// ── 状态 ──────────────────────────────────────────────────
+let currentPatientKey = '';
+let isPlaceholder = false;
 
-let lastMessageSignature = '';
-
+// ── 初始化 ────────────────────────────────────────────────
 bindEvents();
 init();
 
 function bindEvents() {
-  els.btnPrint.addEventListener('click', () => window.print());
   els.btnClear.addEventListener('click', clearAllData);
-  els.btnSample.addEventListener('click', () => {
-    receiveMessage({
-      type: 'PRINT_DATA',
-      payload: sampleData,
-    });
-  });
+  els.btnClearLog.addEventListener('click', clearLog);
 
-  window.addEventListener('message', event => {
-    try {
-      const { type, payload } = event.data || {};
+  // ★ 监听常驻：初始化即注册，全程保留
+  window.addEventListener('message', handleMessage);
 
-      // 处理父页面响应的数据
-      if (type === 'RESPONSE_DATA' || type === 'PRINT_DATA') {
-        receiveMessage(event.data);
-        notifyParent(RECEIVED_EVENT, { ok: true });
-        return;
-      }
-
-      // 处理清除数据消息
-      if (type === 'CLEAR_DATA') {
-        clearAllData();
-        notifyParent(RECEIVED_EVENT, { ok: true, action: 'cleared' });
-        return;
-      }
-
-      // 其他消息
-      receiveMessage(event.data);
-      notifyParent(RECEIVED_EVENT, { ok: true });
-    } catch (error) {
-      setState(`消息解析失败: ${error.message}`, 'error');
-      els.rawMessage.textContent = safeStringify(event.data);
-      notifyParent(RECEIVED_EVENT, { ok: false, error: error.message });
-    }
-  });
-
+  // 页面卸载时清缓存
   window.addEventListener('pagehide', clearStorageOnly);
   window.addEventListener('beforeunload', clearStorageOnly);
+
+  // 可见性变化时请求数据
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && !hasStoredPayload()) {
-      requestDataFromParent();
+    if (document.visibilityState === 'visible') {
+      addLog('[触发] visibilitychange → visible', 'info');
+      requestData('visibilitychange');
     }
+  });
+
+  // pageshow 事件
+  window.addEventListener('pageshow', event => {
+    addLog(`[触发] pageshow, persisted=${event.persisted}`, 'info');
+    requestData('pageshow');
+  });
+
+  // window focus 事件
+  window.addEventListener('focus', () => {
+    addLog('[触发] window focus', 'info');
+    requestData('focus');
   });
 }
 
 function init() {
   resetView();
   restoreFromStorage();
-  notifyParent(READY_EVENT, { ok: true });
-  requestDataFromParent();
+  addLog('[初始化] 页面加载', 'info');
+  requestData('init');
 }
 
-function receiveMessage(message) {
-  const payload = normalizePayload(message);
-  const signature = safeStringify(payload);
-  if (signature === lastMessageSignature) return;
-  lastMessageSignature = signature;
-  persistPayload(payload);
-  renderPayload(payload, message);
+// ── 核心消息处理：无条件消费 ─────────────────────────────
+function handleMessage(event) {
+  try {
+    const data = event.data;
+    if (!data || typeof data !== 'object') return;
+
+    // ★ 从 event.data 顶层取 type/account/patient/token
+    const type = data.type;
+    const account = data.account || (data.payload && data.payload.account);
+    const patient = data.patient || (data.payload && data.payload.patient);
+    const token = data.token || (data.payload && data.payload.token);
+
+    // ★ "无病人"消息处理
+    if (type === 'SmartCare' && !patient) {
+      addLog('[收到] SmartCare 消息，但无 patient 数据，请选中病人', 'warning');
+      setState('请选中病人', 'error');
+      return;
+    }
+
+    // ★ 只处理有 patient 的 SmartCare 消息
+    if (type === 'SmartCare' && patient) {
+      const patientKey = getPatientKey(patient);
+      addLog(`[收到] SmartCare 消息, patientKey=${patientKey}`, 'success');
+
+      // 无条件重渲
+      processData({ account, patient, token });
+      return;
+    }
+
+    // 其他消息记录但不处理
+    addLog(`[收到] 非 SmartCare 消息: type=${type}`, 'info');
+
+  } catch (error) {
+    addLog(`[错误] 消息处理失败: ${error.message}`, 'error');
+  }
 }
 
-function renderPayload(payload, rawMessage) {
-  const printData = buildPrintData(payload);
-  const summaryItems = [
-    { label: '科室', value: printData.dept || '-' },
-    { label: '床位', value: printData.hisBed || '-' },
-    { label: '患者姓名', value: printData.name || '-' },
-    { label: '住院号', value: printData.mrn || '-' },
-  ];
+// ── 数据处理：无条件消费 ─────────────────────────────────
+function processData(data) {
+  const patientKey = getPatientKey(data.patient);
 
+  addLog(`[处理] patientKey=${patientKey}, currentKey=${currentPatientKey || '(空)'}, isPlaceholder=${isPlaceholder}`, 'info');
+
+  // ★ 唯一键变化：强制刷新
+  if (patientKey && currentPatientKey && patientKey !== currentPatientKey) {
+    addLog(`[切换] 患者切换: ${currentPatientKey} → ${patientKey}`, 'warning');
+  }
+
+  // ★ 无条件更新状态
+  currentPatientKey = patientKey;
+  isPlaceholder = false;
+
+  // 持久化
+  persistPayload(data);
+
+  // 无条件重渲
+  renderPayload(data);
+}
+
+// ── 患者唯一键 ────────────────────────────────────────────
+function getPatientKey(payload) {
+  const p = payload?.patient;
+  if (!p) return '';
+  return String(p.id || p.mrn || p.hisPid || '');
+}
+
+// ── 渲染 ──────────────────────────────────────────────────
+function renderPayload(payload) {
+  const patientKey = getPatientKey(payload);
   els.pageTitle.textContent = DEFAULT_TITLE;
-  els.pageDesc.textContent = '已收到父页面发送的打印数据。';
+  els.pageDesc.textContent = `已收到宿主数据 [患者: ${patientKey || '-'}]`;
   els.updatedAt.textContent = `更新时间：${formatDateTime(new Date())}`;
-  els.rawMessage.textContent = safeStringify(rawMessage);
   els.jsonContent.textContent = safeStringify(payload);
   setState('已接收消息', 'ready');
 
-  renderSummary(summaryItems);
-  renderFields(printData);
+  renderFields(payload);
 
   els.emptyState.classList.add('hidden');
   els.contentArea.classList.remove('hidden');
+
+  addLog(`[渲染] 完成, patientKey=${patientKey || '(空)'}`, 'success');
 }
 
-function buildPrintData(payload) {
+// 通用字段渲染
+function renderFields(payload) {
   const account = payload.account || {};
   const patient = payload.patient || {};
+  const rows = [];
 
-  return {
-    accountId: account.id ?? '',
-    username: account.username ?? '',
-    trueName: decodeText(account.trueName),
-    departmentCode: account.departmentCode ?? '',
-    dept: decodeText(patient.dept),
-    deptCode: patient.deptCode ?? '',
-    hisBed: decodeText(patient.hisBed),
-    hisPid: patient.hisPid ?? '',
-    patientId: patient.id ?? '',
-    mrn: patient.mrn ?? '',
-    name: decodeText(patient.name),
-    clinicalDiagnosis: decodeText(patient.clinicalDiagnosis),
-  };
-}
+  Object.keys(account).forEach(key => {
+    rows.push([`account.${key}`, account[key]]);
+  });
 
-function renderSummary(items) {
-  els.summarySection.innerHTML = items.map(item => `
-    <article class="summary-card">
-      <div class="summary-label">${escapeHtml(item.label)}</div>
-      <div class="summary-value">${escapeHtml(item.value)}</div>
-    </article>
-  `).join('');
-}
+  Object.keys(patient).forEach(key => {
+    rows.push([`patient.${key}`, patient[key]]);
+  });
 
-function renderFields(printData) {
-  const rows = [
-    ['accountId', printData.accountId],
-    ['username', printData.username],
-    ['trueName', printData.trueName],
-    ['departmentCode', printData.departmentCode],
-    ['dept', printData.dept],
-    ['deptCode', printData.deptCode],
-    ['hisBed', printData.hisBed],
-    ['hisPid', printData.hisPid],
-    ['patientId', printData.patientId],
-    ['mrn', printData.mrn],
-    ['name', printData.name],
-    ['clinicalDiagnosis', printData.clinicalDiagnosis],
-  ];
+  Object.keys(payload).forEach(key => {
+    if (key !== 'account' && key !== 'patient') {
+      rows.push([key, payload[key]]);
+    }
+  });
 
   els.fieldBody.innerHTML = rows.map(([key, value]) => `
     <tr>
@@ -186,34 +196,19 @@ function renderFields(printData) {
   `).join('');
 }
 
-function normalizePayload(message) {
-  if (message == null) {
-    throw new Error('消息为空');
-  }
-
-  if (typeof message === 'string') {
-    try {
-      return JSON.parse(message);
-    } catch {
-      return { content: message };
+// ── 请求数据 ──────────────────────────────────────────────
+function requestData(reason) {
+  addLog(`[请求] 向宿主请求数据, reason=${reason}`, 'info');
+  try {
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'PRINT_PAGE_REQUEST_DATA', payload: { reason } }, '*');
     }
+  } catch (e) {
+    addLog(`[错误] 请求失败: ${e.message}`, 'error');
   }
-
-  if (typeof message !== 'object') {
-    return { content: message };
-  }
-
-  if (message.type === 'PRINT_DATA') {
-    return message.payload || {};
-  }
-
-  if (isPlainObject(message.payload)) {
-    return message.payload;
-  }
-
-  return message;
 }
 
+// ── 缓存（只作占位）──────────────────────────────────────
 function persistPayload(payload) {
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -227,16 +222,23 @@ function restoreFromStorage() {
   try {
     const cached = sessionStorage.getItem(STORAGE_KEY);
     const cachedTime = Number(sessionStorage.getItem(STORAGE_TIME_KEY) || 0);
-    if (!cached) return;
+    if (!cached) {
+      addLog('[缓存] 无缓存数据', 'info');
+      return;
+    }
 
     const payload = JSON.parse(cached);
-    lastMessageSignature = safeStringify(payload);
-    renderPayload(payload, payload);
+    const patientKey = getPatientKey(payload);
+    currentPatientKey = patientKey;
+    isPlaceholder = true; // 标记为占位
+
+    renderPayload(payload);
 
     if (cachedTime) {
-      els.updatedAt.textContent = `更新时间：${formatDateTime(new Date(cachedTime))}`;
+      els.updatedAt.textContent = `更新时间：${formatDateTime(new Date(cachedTime))}（缓存占位）`;
     }
-    setState('已从临时缓存恢复数据', 'ready');
+    setState('已从缓存恢复（等待最新数据）', 'ready');
+    addLog(`[缓存] 已恢复, patientKey=${patientKey}, 标记为占位`, 'warning');
   } catch {
     void 0;
   }
@@ -261,67 +263,51 @@ function clearStorageOnly() {
 
 function clearAllData() {
   clearStorageOnly();
-  lastMessageSignature = '';
+  currentPatientKey = '';
+  isPlaceholder = false;
   resetView();
-  notifyParent(REQUEST_EVENT, { reason: 'cleared' });
+  addLog('[清除] 数据已清空，回到等待态', 'warning');
 }
 
-function requestDataFromParent() {
-  // 请求父页面提供通用数据
-  notifyParent(REQUEST_EVENT, {
-    reason: 'init',
-    requiredFields: [
-      'account.id',
-      'account.username',
-      'account.trueName',
-      'account.departmentCode',
-      'patient.dept',
-      'patient.deptCode',
-      'patient.hisBed',
-      'patient.hisPid',
-      'patient.id',
-      'patient.mrn',
-      'patient.name',
-      'patient.clinicalDiagnosis'
-    ]
-  });
-}
-
+// ── 视图重置 ──────────────────────────────────────────────
 function resetView() {
   els.pageTitle.textContent = DEFAULT_TITLE;
   els.pageDesc.textContent = DEFAULT_DESC;
   els.updatedAt.textContent = '';
-  els.rawMessage.textContent = '暂无消息';
   els.jsonContent.textContent = '{}';
-  els.summarySection.innerHTML = '';
   els.fieldBody.innerHTML = '';
   els.emptyState.classList.remove('hidden');
   els.contentArea.classList.add('hidden');
   setState('等待消息');
 }
 
+// ── 状态指示 ──────────────────────────────────────────────
 function setState(text, type = '') {
   els.messageState.textContent = text;
   els.messageState.classList.remove('ready', 'error');
   if (type) els.messageState.classList.add(type);
 }
 
-function notifyParent(type, payload) {
-  if (window.parent === window) return;
-  window.parent.postMessage({ type, payload }, '*');
+// ── 通信日志 ──────────────────────────────────────────────
+function addLog(message, type = 'info') {
+  if (!els.logContent) return;
+  const time = formatTime(new Date());
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  entry.innerHTML = `<span class="log-time">[${time}]</span> ${escapeHtml(message)}`;
+  els.logContent.appendChild(entry);
+  els.logContent.scrollTop = els.logContent.scrollHeight;
 }
 
-function decodeText(value) {
-  if (value == null) return null;
-  return String(value)
-    .replace(/宸ョ▼甯?/, '工程师')
-    .replace(/閲嶇棁鍖诲绉?/, '重症医学科')
-    .replace(/10搴?/, '10床')
-    .replace(/寮犱腹/, '张丹');
+function clearLog() {
+  if (!els.logContent) return;
+  els.logContent.innerHTML = '';
+  addLog('日志已清空', 'info');
 }
 
+// ── 工具函数 ──────────────────────────────────────────────
 function formatValue(value) {
-  if (value == null || value === '') return 'null';
+  if (value == null) return '-';
   if (typeof value === 'object') return safeStringify(value);
   return String(value);
 }
@@ -339,6 +325,15 @@ function formatDateTime(date) {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+function formatTime(date) {
+  return new Intl.DateTimeFormat('zh-CN', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
