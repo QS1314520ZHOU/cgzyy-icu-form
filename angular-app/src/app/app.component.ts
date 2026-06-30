@@ -21,7 +21,7 @@ export class AppComponent implements OnInit, OnDestroy {
   currentData: SmartCareData | null = null;
   isEmpty = true;
 
-  private subscription!: Subscription;
+  private subscriptions: Subscription[] = [];
 
   constructor(
     private messageService: MessageService,
@@ -30,31 +30,34 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     // 订阅数据变化
-    this.subscription = this.messageService.data$.subscribe(data => {
-      if (data) {
-        this.currentData = data;
-        this.patientKey = this.messageService.getPatientKey(data.patient);
-        this.isEmpty = false;
-        this.connectionState = 'received';
-        this.stateText = '已获取数据';
-        this.updatedAt = this.formatDateTime(new Date());
-      }
-    });
+    this.subscriptions.push(
+      this.messageService.data$.subscribe(data => {
+        if (data) {
+          this.currentData = data;
+          this.patientKey = this.messageService.getPatientKey(data.patient);
+          this.isEmpty = false;
+          this.connectionState = 'received';
+          this.stateText = '已获取数据';
+          this.updatedAt = this.formatDateTime(new Date());
+        }
+      })
+    );
 
     // 订阅状态变化
-    this.messageService.state$.subscribe(state => {
-      this.connectionState = state.type;
-      this.stateText = state.text;
-    });
+    this.subscriptions.push(
+      this.messageService.state$.subscribe(state => {
+        this.connectionState = state.type;
+        this.stateText = state.text;
+      })
+    );
 
-    // 初始化
+    // 初始化 MessageService（只调用一次）
     this.messageService.init();
   }
 
   ngOnDestroy(): void {
-    if (this.subscription) {
-      this.subscription.unsubscribe();
-    }
+    // 取消所有订阅
+    this.subscriptions.forEach(sub => sub.unsubscribe());
   }
 
   clearLog(): void {

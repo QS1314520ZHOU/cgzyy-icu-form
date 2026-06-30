@@ -515,3 +515,86 @@ iframe 收到的消息 origin 不在白名单。检查：
 1. 内层 iframe 是否加载成功
 2. 控制台是否有 postMessage 错误
 3. 通信日志是否有 `[转发]` 记录
+
+---
+
+## ⚠️ 宿主侧必须配合（SmartCare 侧）
+
+### 问题背景
+
+嵌入端已实现以下兜底机制：
+- `visibilitychange` / `focus` / `pageshow` 事件触发时，强制向外层请求数据
+- 缓存仅作为首屏占位，收到新数据无条件覆盖
+- 患者唯一键变化时强制刷新，绕过内容去重
+- 类型识别放宽：支持多种 type，兜底识别 account+patient 结构
+
+**但这些兜底机制的前提是：宿主端必须响应 iframe 的数据请求。**
+
+### 宿主端必须实现的 3 个行为
+
+#### 1. 响应 iframe 的数据请求（必须）
+
+```javascript
+// SmartCare：监听 iframe 消息
+window.addEventListener('message', (event) => {
+  const iframe = document.getElementById('icuFrame');
+  if (event.source !== iframe.contentWindow) return;
+
+  const { type, payload } = event.data;
+
+  if (type === 'HOST_PAGE_READY' || type === 'REQUEST_HOST_DATA') {
+    // ★ 必须响应，且回传当前选中患者（不是登录时缓存的）
+    sendCurrentPatientData();
+  }
+});
+```
+
+#### 2. 切换患者时主动推送（推荐）
+
+```javascript
+// SmartCare：用户在「在线病人」切换患者时
+function onPatientSwitch(patientId) {
+  const iframe = document.getElementById('icuFrame');
+  iframe.contentWindow.postMessage({
+    type: 'SmartCare',
+    account: getCurrentAccount(),
+    patient: getPatientData(patientId),  // ★ 当前选中患者，不是登录时缓存
+    token: getToken()
+  }, '*');
+}
+```
+
+#### 3. 刷新按钮触发重推（推荐）
+
+```javascript
+// SmartCare：刷新按钮不应只刷新 iframe，还应重推当前患者数据
+function onRefreshClick() {
+  const iframe = document.getElementById('icuFrame');
+  iframe.src = iframe.src;  // 刷新 iframe
+
+  setTimeout(() => {
+    sendCurrentPatientData();  // 重推当前患者
+  }, 500);
+}
+```
+
+### 常见错误
+
+| 错误做法 | 正确做法 |
+|----------|----------|
+| 只在登录时推送一次患者数据 | 每次切换患者都推送 |
+| 响应请求时回传登录时缓存的患者 | 回传当前选中的患者 |
+| 刷新按钮只刷新 iframe 不重推数据 | 刷新后重推当前患者 |
+| postMessage 用 `'*'` 作为 targetOrigin | 用具体域名 |
+
+### targetOrigin 配置
+
+生产环境 postMessage 用具体 targetOrigin，不要用 `'*'`：
+
+```javascript
+// 错误
+iframe.contentWindow.postMessage(data, '*');
+
+// 正确
+iframe.contentWindow.postMessage(data, 'https://your-domain.com');
+```
