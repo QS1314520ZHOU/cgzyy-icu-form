@@ -41,6 +41,12 @@ export class MessageService {
   private readonly POLL_INTERVAL = 3000;  // 轮询间隔（毫秒）
   private readonly REQUEST_COOLDOWN = 1000;  // 请求冷却时间（毫秒）
 
+  // ── targetOrigin 配置（按通道分离）────────────────────
+  // ★ 向上 → SmartCare 宿主
+  private readonly HOST_ORIGIN = 'http://10.35.4.10:60000';
+  // ★ 向下 → 内层 print iframe（同源）
+  private readonly IFRAME_ORIGIN = location.origin;
+
   // ── origin 白名单 ─────────────────────────────────────
   private readonly ORIGIN_WHITELIST = [
     location.origin,
@@ -88,7 +94,8 @@ export class MessageService {
     try {
       const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
       if (target) {
-        target.postMessage({ type: 'HOST_PAGE_READY', payload: { ok: true } }, 'http://10.35.4.10:60000');
+        // ★ 向上 → 宿主，用 HOST_ORIGIN
+        target.postMessage({ type: 'HOST_PAGE_READY', payload: { ok: true } }, this.HOST_ORIGIN);
       }
     } catch (e: any) {
       this.logService.add(`[错误] 发送 HOST_PAGE_READY 失败: ${e.message}`, 'error');
@@ -238,8 +245,8 @@ export class MessageService {
       const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
       if (target) {
         // ★ 类型 = REQUEST_HOST_DATA（宿主约定）
-        // ★ targetOrigin 用具体域名，不用 '*'
-        target.postMessage({ type: 'REQUEST_HOST_DATA', payload: { reason } }, 'http://10.35.4.10:60000');
+        // ★ 向上 → 宿主，用 HOST_ORIGIN
+        target.postMessage({ type: 'REQUEST_HOST_DATA', payload: { reason } }, this.HOST_ORIGIN);
       }
     } catch (e: any) {
       this.logService.add(`[错误] 请求失败: ${e.message}`, 'error');
@@ -283,10 +290,11 @@ export class MessageService {
       const iframe = document.querySelector('iframe');
       // ★ 确保 iframe 存在且不是自己（避免自循环）
       if (iframe && iframe.contentWindow && iframe.contentWindow !== window) {
+        // ★ 向下 → 内层 print iframe，用 IFRAME_ORIGIN
         iframe.contentWindow.postMessage({
           type: 'PRINT_DATA',
           payload: { type: 'SmartCare', account: data.account, patient: data.patient }
-        }, '*');
+        }, this.IFRAME_ORIGIN);
         const patientKey = this.getPatientKey(data.patient);
         this.logService.add(`[转发] 已转发给内层 iframe, patientKey=${patientKey}`, 'info');
       }

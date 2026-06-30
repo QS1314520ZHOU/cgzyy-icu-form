@@ -206,16 +206,16 @@ function renderFields(payload) {
   `).join('');
 }
 
-// ── 请求数据（向上发给宿主）──────────────────────────────
+// ── 请求数据（向上发给 parent.html）────────────────────────
 function requestData(reason) {
-  addLog(`[请求] 向宿主请求数据, reason=${reason}`, 'info');
+  addLog(`[请求] 向上请求数据, reason=${reason}`, 'info');
   try {
     // ★ 目标 = window.parent（若与 self 相同则用 window.top）
     const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
     if (target) {
-      // ★ 类型恢复为宿主约定的 REQUEST_HOST_DATA，禁止用 PRINT_PAGE_REQUEST_DATA
-      // ★ targetOrigin 用具体域名，不用 '*'
-      target.postMessage({ type: 'REQUEST_HOST_DATA', payload: { reason } }, 'http://10.35.4.10:60000');
+      // ★ 类型 = REQUEST_HOST_DATA（宿主约定）
+      // ★ targetOrigin 用 location.origin（同源通信），不用宿主域名
+      target.postMessage({ type: 'REQUEST_HOST_DATA', payload: { reason } }, location.origin);
     }
   } catch (e) {
     addLog(`[错误] 请求失败: ${e.message}`, 'error');
