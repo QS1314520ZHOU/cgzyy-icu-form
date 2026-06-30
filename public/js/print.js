@@ -88,8 +88,18 @@ function init() {
 // ── 核心消息处理：无条件消费 ─────────────────────────────
 function handleMessage(event) {
   try {
+    // ★ 忽略自己发出的消息（避免自循环）
+    if (event.source === window) {
+      return;
+    }
+
     const data = event.data;
     if (!data || typeof data !== 'object') return;
+
+    // ★ 忽略请求类消息（避免自循环）
+    if (data.type === 'REQUEST_HOST_DATA' || data.type === 'HOST_PAGE_READY' || data.type === 'PRINT_PAGE_REQUEST_DATA') {
+      return;
+    }
 
     // ★ 从 event.data 顶层取 type/account/patient/token
     const type = data.type;
@@ -196,12 +206,16 @@ function renderFields(payload) {
   `).join('');
 }
 
-// ── 请求数据 ──────────────────────────────────────────────
+// ── 请求数据（向上发给宿主）──────────────────────────────
 function requestData(reason) {
   addLog(`[请求] 向宿主请求数据, reason=${reason}`, 'info');
   try {
-    if (window.parent !== window) {
-      window.parent.postMessage({ type: 'PRINT_PAGE_REQUEST_DATA', payload: { reason } }, '*');
+    // ★ 目标 = window.parent（若与 self 相同则用 window.top）
+    const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
+    if (target) {
+      // ★ 类型恢复为宿主约定的 REQUEST_HOST_DATA，禁止用 PRINT_PAGE_REQUEST_DATA
+      // ★ targetOrigin 用具体域名，不用 '*'
+      target.postMessage({ type: 'REQUEST_HOST_DATA', payload: { reason } }, 'http://10.35.4.10:60000');
     }
   } catch (e) {
     addLog(`[错误] 请求失败: ${e.message}`, 'error');

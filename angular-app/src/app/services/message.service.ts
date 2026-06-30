@@ -72,16 +72,45 @@ export class MessageService {
     // 3. 注册生命周期事件
     this.registerLifecycleEvents();
 
-    // 4. 请求数据
+    // 4. 发送 HOST_PAGE_READY（通知宿主已准备好）
+    this.sendReady();
+
+    // 5. 请求数据
     this.requestData('init');
 
-    // 5. 启动轮询
+    // 6. 启动轮询
     this.startPolling();
+  }
+
+  // ── 发送 HOST_PAGE_READY ────────────────────────────────
+  private sendReady(): void {
+    this.logService.add('[就绪] 发送 HOST_PAGE_READY', 'info');
+    try {
+      const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
+      if (target) {
+        target.postMessage({ type: 'HOST_PAGE_READY', payload: { ok: true } }, 'http://10.35.4.10:60000');
+      }
+    } catch (e: any) {
+      this.logService.add(`[错误] 发送 HOST_PAGE_READY 失败: ${e.message}`, 'error');
+    }
   }
 
   // ── 注册消息监听（常驻）────────────────────────────────
   private registerMessageListener(): void {
     window.addEventListener('message', (event) => {
+      // ★ 忽略自己发出的消息（避免自循环）
+      if (event.source === window) {
+        return;
+      }
+
+      // ★ 忽略请求类消息（避免自循环）
+      if (event.data && typeof event.data === 'object' &&
+          (event.data.type === 'REQUEST_HOST_DATA' ||
+           event.data.type === 'HOST_PAGE_READY' ||
+           event.data.type === 'PRINT_PAGE_REQUEST_DATA')) {
+        return;
+      }
+
       // origin 校验
       if (!this.isAllowedOrigin(event.origin)) {
         const warnMsg = `[安全] 来源校验失败: origin=${event.origin}，已忽略`;
@@ -191,7 +220,7 @@ export class MessageService {
     }
   }
 
-  // ── 请求数据 ──────────────────────────────────────────
+  // ── 请求数据（向上发给宿主）─────────────────────────────
   requestData(reason: string): void {
     const now = Date.now();
 
@@ -205,9 +234,12 @@ export class MessageService {
     this.logService.add(`[请求] 向外层请求数据, reason=${reason}`, 'info');
 
     try {
+      // ★ 目标 = window.parent（若与 self 相同则用 window.top）
       const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
       if (target) {
-        target.postMessage({ type: 'REQUEST_HOST_DATA', payload: { reason } }, '*');
+        // ★ 类型 = REQUEST_HOST_DATA（宿主约定）
+        // ★ targetOrigin 用具体域名，不用 '*'
+        target.postMessage({ type: 'REQUEST_HOST_DATA', payload: { reason } }, 'http://10.35.4.10:60000');
       }
     } catch (e: any) {
       this.logService.add(`[错误] 请求失败: ${e.message}`, 'error');
@@ -249,7 +281,8 @@ export class MessageService {
   private forwardToIframe(data: SmartCareData): void {
     try {
       const iframe = document.querySelector('iframe');
-      if (iframe && iframe.contentWindow) {
+      // ★ 确保 iframe 存在且不是自己（避免自循环）
+      if (iframe && iframe.contentWindow && iframe.contentWindow !== window) {
         iframe.contentWindow.postMessage({
           type: 'PRINT_DATA',
           payload: { type: 'SmartCare', account: data.account, patient: data.patient }
