@@ -1,0 +1,57 @@
+/*    */ package com.smartcare.backend.entity;
+/*    */ 
+/*    */ 
+/*    */ @Document(collection = "crrt_records")
+/*    */ public class CrrtRecord {
+/*    */   @Id
+/*    */   private String id;
+/*    */   private String pid;
+/*    */   private String vascularAccess;
+/*    */   private String filterType;
+/*    */   private List<NursingRecord> nursingRecords;
+/*    */   
+/* 13 */   public void setId(String id) { this.id = id; } public void setPid(String pid) { this.pid = pid; } public void setVascularAccess(String vascularAccess) { this.vascularAccess = vascularAccess; } public void setFilterType(String filterType) { this.filterType = filterType; } public void setNursingRecords(List<NursingRecord> nursingRecords) { this.nursingRecords = nursingRecords; } public boolean equals(Object o) { if (o == this) return true;  if (!(o instanceof CrrtRecord)) return false;  CrrtRecord other = (CrrtRecord)o; if (!other.canEqual(this)) return false;  Object this$id = getId(), other$id = other.getId(); if ((this$id == null) ? (other$id != null) : !this$id.equals(other$id)) return false;  Object this$pid = getPid(), other$pid = other.getPid(); if ((this$pid == null) ? (other$pid != null) : !this$pid.equals(other$pid)) return false;  Object this$vascularAccess = getVascularAccess(), other$vascularAccess = other.getVascularAccess(); if ((this$vascularAccess == null) ? (other$vascularAccess != null) : !this$vascularAccess.equals(other$vascularAccess)) return false;  Object this$filterType = getFilterType(), other$filterType = other.getFilterType(); if ((this$filterType == null) ? (other$filterType != null) : !this$filterType.equals(other$filterType)) return false;  Object<NursingRecord> this$nursingRecords = (Object<NursingRecord>)getNursingRecords(), other$nursingRecords = (Object<NursingRecord>)other.getNursingRecords(); return !((this$nursingRecords == null) ? (other$nursingRecords != null) : !this$nursingRecords.equals(other$nursingRecords)); } protected boolean canEqual(Object other) { return other instanceof CrrtRecord; } public int hashCode() { int PRIME = 59; result = 1; Object $id = getId(); result = result * 59 + (($id == null) ? 43 : $id.hashCode()); Object $pid = getPid(); result = result * 59 + (($pid == null) ? 43 : $pid.hashCode()); Object $vascularAccess = getVascularAccess(); result = result * 59 + (($vascularAccess == null) ? 43 : $vascularAccess.hashCode()); Object $filterType = getFilterType(); result = result * 59 + (($filterType == null) ? 43 : $filterType.hashCode()); Object<NursingRecord> $nursingRecords = (Object<NursingRecord>)getNursingRecords(); return result * 59 + (($nursingRecords == null) ? 43 : $nursingRecords.hashCode()); } public String toString() { return "CrrtRecord(id=" + getId() + ", pid=" + getPid() + ", vascularAccess=" + getVascularAccess() + ", filterType=" + getFilterType() + ", nursingRecords=" + getNursingRecords() + ")"; }
+/*    */ 
+/*    */   
+/*    */   public String getId() {
+/* 17 */     return this.id;
+/*    */   } public String getPid() {
+/* 19 */     return this.pid;
+/*    */   }
+/*    */   public String getVascularAccess() {
+/* 22 */     return this.vascularAccess;
+/*    */   } public String getFilterType() {
+/* 24 */     return this.filterType;
+/*    */   }
+/*    */   public List<NursingRecord> getNursingRecords() {
+/* 27 */     return this.nursingRecords;
+/*    */   } public static class NursingRecord {
+/* 29 */     private Date time; private String bp; private Integer hr; private String mode; private Integer pa; private Integer pv; private Integer tmp; private Integer pbf; public void setTime(Date time) { this.time = time; } private Integer qb; private Integer qd; private Integer qf; private Integer waste; private String anticoagulant; private Integer quf; private String alarms; private String nurseSignature; private String nurseAccountId; public void setBp(String bp) { this.bp = bp; } public void setHr(Integer hr) { this.hr = hr; } public void setMode(String mode) { this.mode = mode; } public void setPa(Integer pa) { this.pa = pa; } public void setPv(Integer pv) { this.pv = pv; } public void setTmp(Integer tmp) { this.tmp = tmp; } public void setPbf(Integer pbf) { this.pbf = pbf; } public void setQb(Integer qb) { this.qb = qb; } public void setQd(Integer qd) { this.qd = qd; } public void setQf(Integer qf) { this.qf = qf; } public void setWaste(Integer waste) { this.waste = waste; } public void setAnticoagulant(String anticoagulant) { this.anticoagulant = anticoagulant; } public void setQuf(Integer quf) { this.quf = quf; } public void setAlarms(String alarms) { this.alarms = alarms; } public void setNurseSignature(String nurseSignature) { this.nurseSignature = nurseSignature; } public void setNurseAccountId(String nurseAccountId) { this.nurseAccountId = nurseAccountId; } public boolean equals(Object o) { if (o == this) return true;  if (!(o instanceof NursingRecord)) return false;  NursingRecord other = (NursingRecord)o; if (!other.canEqual(this)) return false;  Object this$hr = getHr(), other$hr = other.getHr(); if ((this$hr == null) ? (other$hr != null) : !this$hr.equals(other$hr)) return false;  Object this$pa = getPa(), other$pa = other.getPa(); if ((this$pa == null) ? (other$pa != null) : !this$pa.equals(other$pa)) return false;  Object this$pv = getPv(), other$pv = other.getPv(); if ((this$pv == null) ? (other$pv != null) : !this$pv.equals(other$pv)) return false;  Object this$tmp = getTmp(), other$tmp = other.getTmp(); if ((this$tmp == null) ? (other$tmp != null) : !this$tmp.equals(other$tmp)) return false;  Object this$pbf = getPbf(), other$pbf = other.getPbf(); if ((this$pbf == null) ? (other$pbf != null) : !this$pbf.equals(other$pbf)) return false;  Object this$qb = getQb(), other$qb = other.getQb(); if ((this$qb == null) ? (other$qb != null) : !this$qb.equals(other$qb)) return false;  Object this$qd = getQd(), other$qd = other.getQd(); if ((this$qd == null) ? (other$qd != null) : !this$qd.equals(other$qd)) return false;  Object this$qf = getQf(), other$qf = other.getQf(); if ((this$qf == null) ? (other$qf != null) : !this$qf.equals(other$qf)) return false;  Object this$waste = getWaste(), other$waste = other.getWaste(); if ((this$waste == null) ? (other$waste != null) : !this$waste.equals(other$waste)) return false;  Object this$quf = getQuf(), other$quf = other.getQuf(); if ((this$quf == null) ? (other$quf != null) : !this$quf.equals(other$quf)) return false;  Object this$time = getTime(), other$time = other.getTime(); if ((this$time == null) ? (other$time != null) : !this$time.equals(other$time)) return false;  Object this$bp = getBp(), other$bp = other.getBp(); if ((this$bp == null) ? (other$bp != null) : !this$bp.equals(other$bp)) return false;  Object this$mode = getMode(), other$mode = other.getMode(); if ((this$mode == null) ? (other$mode != null) : !this$mode.equals(other$mode)) return false;  Object this$anticoagulant = getAnticoagulant(), other$anticoagulant = other.getAnticoagulant(); if ((this$anticoagulant == null) ? (other$anticoagulant != null) : !this$anticoagulant.equals(other$anticoagulant)) return false;  Object this$alarms = getAlarms(), other$alarms = other.getAlarms(); if ((this$alarms == null) ? (other$alarms != null) : !this$alarms.equals(other$alarms)) return false;  Object this$nurseSignature = getNurseSignature(), other$nurseSignature = other.getNurseSignature(); if ((this$nurseSignature == null) ? (other$nurseSignature != null) : !this$nurseSignature.equals(other$nurseSignature)) return false;  Object this$nurseAccountId = getNurseAccountId(), other$nurseAccountId = other.getNurseAccountId(); return !((this$nurseAccountId == null) ? (other$nurseAccountId != null) : !this$nurseAccountId.equals(other$nurseAccountId)); } protected boolean canEqual(Object other) { return other instanceof NursingRecord; } public int hashCode() { int PRIME = 59; result = 1; Object $hr = getHr(); result = result * 59 + (($hr == null) ? 43 : $hr.hashCode()); Object $pa = getPa(); result = result * 59 + (($pa == null) ? 43 : $pa.hashCode()); Object $pv = getPv(); result = result * 59 + (($pv == null) ? 43 : $pv.hashCode()); Object $tmp = getTmp(); result = result * 59 + (($tmp == null) ? 43 : $tmp.hashCode()); Object $pbf = getPbf(); result = result * 59 + (($pbf == null) ? 43 : $pbf.hashCode()); Object $qb = getQb(); result = result * 59 + (($qb == null) ? 43 : $qb.hashCode()); Object $qd = getQd(); result = result * 59 + (($qd == null) ? 43 : $qd.hashCode()); Object $qf = getQf(); result = result * 59 + (($qf == null) ? 43 : $qf.hashCode()); Object $waste = getWaste(); result = result * 59 + (($waste == null) ? 43 : $waste.hashCode()); Object $quf = getQuf(); result = result * 59 + (($quf == null) ? 43 : $quf.hashCode()); Object $time = getTime(); result = result * 59 + (($time == null) ? 43 : $time.hashCode()); Object $bp = getBp(); result = result * 59 + (($bp == null) ? 43 : $bp.hashCode()); Object $mode = getMode(); result = result * 59 + (($mode == null) ? 43 : $mode.hashCode()); Object $anticoagulant = getAnticoagulant(); result = result * 59 + (($anticoagulant == null) ? 43 : $anticoagulant.hashCode()); Object $alarms = getAlarms(); result = result * 59 + (($alarms == null) ? 43 : $alarms.hashCode()); Object $nurseSignature = getNurseSignature(); result = result * 59 + (($nurseSignature == null) ? 43 : $nurseSignature.hashCode()); Object $nurseAccountId = getNurseAccountId(); return result * 59 + (($nurseAccountId == null) ? 43 : $nurseAccountId.hashCode()); } public String toString() { return "CrrtRecord.NursingRecord(time=" + getTime() + ", bp=" + getBp() + ", hr=" + getHr() + ", mode=" + getMode() + ", pa=" + getPa() + ", pv=" + getPv() + ", tmp=" + getTmp() + ", pbf=" + getPbf() + ", qb=" + getQb() + ", qd=" + getQd() + ", qf=" + getQf() + ", waste=" + getWaste() + ", anticoagulant=" + getAnticoagulant() + ", quf=" + getQuf() + ", alarms=" + getAlarms() + ", nurseSignature=" + getNurseSignature() + ", nurseAccountId=" + getNurseAccountId() + ")"; }
+/*    */      public Date getTime() {
+/* 31 */       return this.time;
+/*    */     }
+/* 33 */     public String getBp() { return this.bp; }
+/* 34 */     public Integer getHr() { return this.hr; }
+/* 35 */     public String getMode() { return this.mode; }
+/* 36 */     public Integer getPa() { return this.pa; }
+/* 37 */     public Integer getPv() { return this.pv; }
+/* 38 */     public Integer getTmp() { return this.tmp; }
+/* 39 */     public Integer getPbf() { return this.pbf; }
+/* 40 */     public Integer getQb() { return this.qb; }
+/* 41 */     public Integer getQd() { return this.qd; }
+/* 42 */     public Integer getQf() { return this.qf; }
+/* 43 */     public Integer getWaste() { return this.waste; }
+/* 44 */     public String getAnticoagulant() { return this.anticoagulant; }
+/* 45 */     public Integer getQuf() { return this.quf; }
+/* 46 */     public String getAlarms() { return this.alarms; }
+/* 47 */     public String getNurseSignature() { return this.nurseSignature; } public String getNurseAccountId() {
+/* 48 */       return this.nurseAccountId;
+/*    */     }
+/*    */   }
+/*    */ }
+
+
+/* Location:              E:\深医\医院\重钢医院\AI\backend-from-0.0.1.jar!\com\smartcare\backend\entity\CrrtRecord.class
+ * Java compiler version: 11 (55.0)
+ * JD-Core Version:       1.1.3
+ */

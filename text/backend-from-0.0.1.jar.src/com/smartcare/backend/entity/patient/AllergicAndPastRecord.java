@@ -1,0 +1,32 @@
+/*    */ package com.smartcare.backend.entity.patient;
+/*    */ public class AllergicAndPastRecord { private String editId;
+/*    */   private Date editAllergicTime;
+/*    */   private String editAllergicDesc;
+/*    */   private Date syncAllergicTime;
+/*    */   
+/*  7 */   public void setEditId(String editId) { this.editId = editId; } private String syncAllergicDesc; private Date editPastTime; private String editPastDesc; private Date syncPastTime; private String syncPastDesc; public void setEditAllergicTime(Date editAllergicTime) { this.editAllergicTime = editAllergicTime; } public void setEditAllergicDesc(String editAllergicDesc) { this.editAllergicDesc = editAllergicDesc; } public void setSyncAllergicTime(Date syncAllergicTime) { this.syncAllergicTime = syncAllergicTime; } public void setSyncAllergicDesc(String syncAllergicDesc) { this.syncAllergicDesc = syncAllergicDesc; } public void setEditPastTime(Date editPastTime) { this.editPastTime = editPastTime; } public void setEditPastDesc(String editPastDesc) { this.editPastDesc = editPastDesc; } public void setSyncPastTime(Date syncPastTime) { this.syncPastTime = syncPastTime; } public void setSyncPastDesc(String syncPastDesc) { this.syncPastDesc = syncPastDesc; } public boolean equals(Object o) { if (o == this) return true;  if (!(o instanceof AllergicAndPastRecord)) return false;  AllergicAndPastRecord other = (AllergicAndPastRecord)o; if (!other.canEqual(this)) return false;  Object this$editId = getEditId(), other$editId = other.getEditId(); if ((this$editId == null) ? (other$editId != null) : !this$editId.equals(other$editId)) return false;  Object this$editAllergicTime = getEditAllergicTime(), other$editAllergicTime = other.getEditAllergicTime(); if ((this$editAllergicTime == null) ? (other$editAllergicTime != null) : !this$editAllergicTime.equals(other$editAllergicTime)) return false;  Object this$editAllergicDesc = getEditAllergicDesc(), other$editAllergicDesc = other.getEditAllergicDesc(); if ((this$editAllergicDesc == null) ? (other$editAllergicDesc != null) : !this$editAllergicDesc.equals(other$editAllergicDesc)) return false;  Object this$syncAllergicTime = getSyncAllergicTime(), other$syncAllergicTime = other.getSyncAllergicTime(); if ((this$syncAllergicTime == null) ? (other$syncAllergicTime != null) : !this$syncAllergicTime.equals(other$syncAllergicTime)) return false;  Object this$syncAllergicDesc = getSyncAllergicDesc(), other$syncAllergicDesc = other.getSyncAllergicDesc(); if ((this$syncAllergicDesc == null) ? (other$syncAllergicDesc != null) : !this$syncAllergicDesc.equals(other$syncAllergicDesc)) return false;  Object this$editPastTime = getEditPastTime(), other$editPastTime = other.getEditPastTime(); if ((this$editPastTime == null) ? (other$editPastTime != null) : !this$editPastTime.equals(other$editPastTime)) return false;  Object this$editPastDesc = getEditPastDesc(), other$editPastDesc = other.getEditPastDesc(); if ((this$editPastDesc == null) ? (other$editPastDesc != null) : !this$editPastDesc.equals(other$editPastDesc)) return false;  Object this$syncPastTime = getSyncPastTime(), other$syncPastTime = other.getSyncPastTime(); if ((this$syncPastTime == null) ? (other$syncPastTime != null) : !this$syncPastTime.equals(other$syncPastTime)) return false;  Object this$syncPastDesc = getSyncPastDesc(), other$syncPastDesc = other.getSyncPastDesc(); return !((this$syncPastDesc == null) ? (other$syncPastDesc != null) : !this$syncPastDesc.equals(other$syncPastDesc)); } protected boolean canEqual(Object other) { return other instanceof AllergicAndPastRecord; } public int hashCode() { int PRIME = 59; result = 1; Object $editId = getEditId(); result = result * 59 + (($editId == null) ? 43 : $editId.hashCode()); Object $editAllergicTime = getEditAllergicTime(); result = result * 59 + (($editAllergicTime == null) ? 43 : $editAllergicTime.hashCode()); Object $editAllergicDesc = getEditAllergicDesc(); result = result * 59 + (($editAllergicDesc == null) ? 43 : $editAllergicDesc.hashCode()); Object $syncAllergicTime = getSyncAllergicTime(); result = result * 59 + (($syncAllergicTime == null) ? 43 : $syncAllergicTime.hashCode()); Object $syncAllergicDesc = getSyncAllergicDesc(); result = result * 59 + (($syncAllergicDesc == null) ? 43 : $syncAllergicDesc.hashCode()); Object $editPastTime = getEditPastTime(); result = result * 59 + (($editPastTime == null) ? 43 : $editPastTime.hashCode()); Object $editPastDesc = getEditPastDesc(); result = result * 59 + (($editPastDesc == null) ? 43 : $editPastDesc.hashCode()); Object $syncPastTime = getSyncPastTime(); result = result * 59 + (($syncPastTime == null) ? 43 : $syncPastTime.hashCode()); Object $syncPastDesc = getSyncPastDesc(); return result * 59 + (($syncPastDesc == null) ? 43 : $syncPastDesc.hashCode()); } public String toString() { return "AllergicAndPastRecord(editId=" + getEditId() + ", editAllergicTime=" + getEditAllergicTime() + ", editAllergicDesc=" + getEditAllergicDesc() + ", syncAllergicTime=" + getSyncAllergicTime() + ", syncAllergicDesc=" + getSyncAllergicDesc() + ", editPastTime=" + getEditPastTime() + ", editPastDesc=" + getEditPastDesc() + ", syncPastTime=" + getSyncPastTime() + ", syncPastDesc=" + getSyncPastDesc() + ")"; }
+/*    */    public String getEditId() {
+/*  9 */     return this.editId;
+/*    */   } public Date getEditAllergicTime() {
+/* 11 */     return this.editAllergicTime;
+/*    */   } public String getEditAllergicDesc() {
+/* 13 */     return this.editAllergicDesc;
+/*    */   } public Date getSyncAllergicTime() {
+/* 15 */     return this.syncAllergicTime;
+/*    */   } public String getSyncAllergicDesc() {
+/* 17 */     return this.syncAllergicDesc;
+/*    */   } public Date getEditPastTime() {
+/* 19 */     return this.editPastTime;
+/*    */   } public String getEditPastDesc() {
+/* 21 */     return this.editPastDesc;
+/*    */   } public Date getSyncPastTime() {
+/* 23 */     return this.syncPastTime;
+/*    */   } public String getSyncPastDesc() {
+/* 25 */     return this.syncPastDesc;
+/*    */   } }
+
+
+/* Location:              E:\深医\医院\重钢医院\AI\backend-from-0.0.1.jar!\com\smartcare\backend\entity\patient\AllergicAndPastRecord.class
+ * Java compiler version: 11 (55.0)
+ * JD-Core Version:       1.1.3
+ */
