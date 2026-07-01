@@ -9,11 +9,12 @@ import { LogService } from './log.service';
  *
  * 核心职责：
  * 1. 监听 window message 事件（常驻，应用级）
- * 2. 主动向宿主请求数据（requestData）
- * 3. 注册生命周期事件（visibilitychange/focus/pageshow）
- * 4. 患者切换检测（patientKey = id || mrn || hisPid）
- * 5. NgZone.run 内更新状态，触发变更检测
- * 6. 轮询机制：定期向宿主请求数据，覆盖"刷新后宿主不响应"场景
+ * 2. READY 握手协议：子页发送 READY，收到 INIT 后初始化
+ * 3. 主动向宿主请求数据（requestData）
+ * 4. 注册生命周期事件（visibilitychange/focus/pageshow）
+ * 5. 患者切换检测（patientKey = id || mrn || hisPid）
+ * 6. NgZone.run 内更新状态，触发变更检测
+ * 7. 轮询机制：定期向宿主请求数据，覆盖"刷新后宿主不响应"场景
  */
 @Injectable({
   providedIn: 'root'
@@ -37,9 +38,19 @@ export class MessageService {
   private lastResponseTime = 0;
   private pollTimer: any = null;
 
+  // ── READY 握手状态 ─────────────────────────────────────
+  private readyTimer: any = null;
+  private readyCount = 0;
+  private readonly READY_INTERVAL = 300;  // READY 重发间隔（毫秒）
+  private readonly READY_MAX = 10;        // 最大重发次数
+  private initReceived = false;           // 是否收到 INIT
+
   // ── 配置 ──────────────────────────────────────────────
   private readonly POLL_INTERVAL = 3000;  // 轮询间隔（毫秒）
   private readonly REQUEST_COOLDOWN = 1000;  // 请求冷却时间（毫秒）
+
+  // ── channel 配置 ─────────────────────────────────────
+  private readonly CHANNEL = 'smartcare.scoreReminder.v1';
 
   // ── targetOrigin 配置（按通道分离）────────────────────
   // ★ 向上 → SmartCare 宿主
@@ -72,33 +83,94 @@ export class MessageService {
     // 1. 恢复缓存
     this.restoreFromStorage();
 
-    // 2. 注册消息监听
+    // 2. 注册消息监听（必须在发送 READY 之前）
     this.registerMessageListener();
 
     // 3. 注册生命周期事件
     this.registerLifecycleEvents();
 
-    // 4. 发送 HOST_PAGE_READY（通知宿主已准备好）
-    this.sendReady();
+    // 4. 发送 READY（启动重发机制）
+    this.startReadyLoop();
 
-    // 5. 请求数据
-    this.requestData('init');
-
-    // 6. 启动轮询
+    // 5. 启动轮询（收到 INIT 后才真正工作）
     this.startPolling();
   }
 
-  // ── 发送 HOST_PAGE_READY ────────────────────────────────
+  // ── READY 握手协议 ─────────────────────────────────────
+
+  /**
+   * 启动 READY 重发循环
+   * 每 300ms 重发一次，最多 10 次，收到 INIT 后停止
+   */
+  private startReadyLoop(): void {
+    this.readyCount = 0;
+    this.initReceived = false;
+    this.sendReady();
+
+    this.readyTimer = setInterval(() => {
+      if (this.initReceived) {
+        this.stopReadyLoop();
+        return;
+      }
+
+      if (this.readyCount >= this.READY_MAX) {
+        this.stopReadyLoop();
+        this.logService.add('[READY] 已达最大重发次数，停止重发', 'warning');
+        return;
+      }
+
+      this.sendReady();
+    }, this.READY_INTERVAL);
+  }
+
+  /**
+   * 停止 READY 重发循环
+   */
+  private stopReadyLoop(): void {
+    if (this.readyTimer) {
+      clearInterval(this.readyTimer);
+      this.readyTimer = null;
+    }
+  }
+
+  /**
+   * 发送 READY 消息
+   */
   private sendReady(): void {
-    this.logService.add('[就绪] 发送 HOST_PAGE_READY', 'info');
+    this.readyCount++;
+    this.logService.add(`[READY] 发送 READY (${this.readyCount}/${this.READY_MAX})`, 'info');
+
     try {
       const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
       if (target) {
-        // ★ 向上 → 宿主，用 HOST_ORIGIN
-        target.postMessage({ type: 'HOST_PAGE_READY', payload: { ok: true } }, this.HOST_ORIGIN);
+        target.postMessage({
+          channel: this.CHANNEL,
+          type: 'READY',
+          payload: { ok: true }
+        }, this.HOST_ORIGIN);
       }
     } catch (e: any) {
-      this.logService.add(`[错误] 发送 HOST_PAGE_READY 失败: ${e.message}`, 'error');
+      this.logService.add(`[错误] 发送 READY 失败: ${e.message}`, 'error');
+    }
+  }
+
+  /**
+   * 发送 ACK 消息
+   */
+  private sendAck(): void {
+    this.logService.add('[ACK] 发送 ACK', 'info');
+
+    try {
+      const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
+      if (target) {
+        target.postMessage({
+          channel: this.CHANNEL,
+          type: 'ACK',
+          payload: { ok: true }
+        }, this.HOST_ORIGIN);
+      }
+    } catch (e: any) {
+      this.logService.add(`[错误] 发送 ACK 失败: ${e.message}`, 'error');
     }
   }
 
@@ -110,11 +182,10 @@ export class MessageService {
         return;
       }
 
-      // ★ 忽略请求类消息（避免自循环）
-      if (event.data && typeof event.data === 'object' &&
-          (event.data.type === 'REQUEST_HOST_DATA' ||
-           event.data.type === 'HOST_PAGE_READY' ||
-           event.data.type === 'PRINT_PAGE_REQUEST_DATA')) {
+      // ★ 校验 channel
+      if (!event.data || event.data.channel !== this.CHANNEL) {
+        // 非本 channel 消息，检查是否是旧协议消息
+        this.handleLegacyMessage(event);
         return;
       }
 
@@ -127,42 +198,107 @@ export class MessageService {
       }
 
       try {
-        const data = event.data;
-        if (!data || typeof data !== 'object') return;
+        const { type, payload } = event.data;
 
-        // 从 event.data 顶层取数据（兼容 payload 包装）
-        const type = data.type;
-        const account = data.account || (data.payload && data.payload.account);
-        const patient = data.patient || (data.payload && data.payload.patient);
-        const token = data.token || (data.payload && data.payload.token);
+        switch (type) {
+          case 'INIT':
+            this.handleInit(payload);
+            break;
 
-        // "无病人"消息处理
-        if (type === 'SmartCare' && !patient) {
-          this.logService.add('[收到] SmartCare 消息，但无 patient 数据，请选中病人', 'warning');
-          this.setState('error', '请选中病人');
-          return;
+          case 'PATIENT':
+            this.handlePatient(payload);
+            break;
+
+          default:
+            this.logService.add(`[收到] 未知消息类型: ${type}`, 'info');
         }
-
-        // 只处理有 patient 的 SmartCare 消息
-        if (type === 'SmartCare' && patient) {
-          const patientKey = this.getPatientKey(patient);
-          this.logService.add(`[收到] SmartCare 消息, patientKey=${patientKey}`, 'success');
-
-          // 记录响应时间
-          this.lastResponseTime = Date.now();
-
-          // 无条件处理
-          this.processData({ account, patient, token });
-          return;
-        }
-
-        // 其他消息记录但不处理
-        this.logService.add(`[收到] 非 SmartCare 消息: type=${type}`, 'info');
-
       } catch (error: any) {
         this.logService.add(`[错误] 消息处理失败: ${error.message}`, 'error');
       }
     });
+  }
+
+  /**
+   * 处理 INIT 消息
+   */
+  private handleInit(payload: any): void {
+    this.initReceived = true;
+    this.stopReadyLoop();
+    this.logService.add('[INIT] 收到 INIT 消息', 'success');
+
+    // 回复 ACK
+    this.sendAck();
+
+    // 处理初始化数据
+    const patient = payload?.patient;
+    const account = payload?.account;
+    const token = payload?.token;
+
+    if (patient) {
+      const patientKey = this.getPatientKey(patient);
+      this.logService.add(`[INIT] patientKey=${patientKey}`, 'success');
+      this.processData({ account, patient, token });
+    } else {
+      this.logService.add('[INIT] 无 patient 数据', 'warning');
+    }
+
+    // 请求数据（兜底）
+    this.requestData('init');
+  }
+
+  /**
+   * 处理 PATIENT 消息
+   */
+  private handlePatient(payload: any): void {
+    const patient = payload?.patient || payload;
+    if (!patient) {
+      this.logService.add('[PATIENT] 无 patient 数据', 'warning');
+      return;
+    }
+
+    const patientKey = this.getPatientKey(patient);
+    this.logService.add(`[PATIENT] 收到患者更新, patientKey=${patientKey}`, 'success');
+
+    // 处理患者数据
+    this.processData({ patient });
+  }
+
+  /**
+   * 处理旧协议消息（向后兼容）
+   */
+  private handleLegacyMessage(event: MessageEvent): void {
+    try {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+
+      // 忽略请求类消息（避免自循环）
+      if (data.type === 'REQUEST_HOST_DATA' ||
+          data.type === 'HOST_PAGE_READY' ||
+          data.type === 'PRINT_PAGE_REQUEST_DATA') {
+        return;
+      }
+
+      // origin 校验
+      if (!this.isAllowedOrigin(event.origin)) {
+        return;
+      }
+
+      // 处理 SmartCare 消息（旧协议）
+      if (data.type === 'SmartCare') {
+        const account = data.account || (data.payload && data.payload.account);
+        const patient = data.patient || (data.payload && data.payload.patient);
+        const token = data.token || (data.payload && data.payload.token);
+
+        if (patient) {
+          const patientKey = this.getPatientKey(patient);
+          this.logService.add(`[旧协议] 收到 SmartCare 消息, patientKey=${patientKey}`, 'success');
+          this.lastResponseTime = Date.now();
+          this.processData({ account, patient, token });
+        }
+      }
+    } catch (error: any) {
+      this.logService.add(`[错误] 旧协议消息处理失败: ${error.message}`, 'error');
+    }
   }
 
   // ── 注册生命周期事件 ──────────────────────────────────
@@ -244,9 +380,12 @@ export class MessageService {
       // ★ 目标 = window.parent（若与 self 相同则用 window.top）
       const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
       if (target) {
-        // ★ 类型 = REQUEST_HOST_DATA（宿主约定）
         // ★ 向上 → 宿主，用 HOST_ORIGIN
-        target.postMessage({ type: 'REQUEST_HOST_DATA', payload: { reason } }, this.HOST_ORIGIN);
+        target.postMessage({
+          channel: this.CHANNEL,
+          type: 'REQUEST_HOST_DATA',
+          payload: { reason }
+        }, this.HOST_ORIGIN);
       }
     } catch (e: any) {
       this.logService.add(`[错误] 请求失败: ${e.message}`, 'error');
@@ -270,6 +409,9 @@ export class MessageService {
     // 无条件更新状态
     this.currentPatientKey = patientKey;
     this.isPlaceholder = false;
+
+    // 记录响应时间
+    this.lastResponseTime = Date.now();
 
     // 持久化
     this.storageService.persist(data);
@@ -348,5 +490,6 @@ export class MessageService {
   // ── 销毁时清理 ─────────────────────────────────────────
   ngOnDestroy(): void {
     this.stopPolling();
+    this.stopReadyLoop();
   }
 }
