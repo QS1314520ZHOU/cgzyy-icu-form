@@ -8,6 +8,36 @@ const { smartCareConn } = require('../config/db');
  */
 class ScoreReminderService {
   /**
+   * 获取科室列表
+   * @returns {Promise<Array>} 科室列表
+   */
+  async getDepartments() {
+    try {
+      // 从 SmartCare 库获取科室数据
+      const Department = smartCareConn.model('Department');
+
+      const departments = await Department.find({})
+        .select('code name shortName')
+        .lean();
+
+      // 如果没有数据，返回默认科室
+      if (!departments || departments.length === 0) {
+        return [
+          { code: '125011', name: '重症医学科', shortName: 'ICU' }
+        ];
+      }
+
+      return departments;
+    } catch (error) {
+      console.error('[ScoreReminderService] 获取科室列表失败:', error.message);
+      // 返回默认科室
+      return [
+        { code: '125011', name: '重症医学科', shortName: 'ICU' }
+      ];
+    }
+  }
+
+  /**
    * 获取医生管辖的在床患者
    * @param {string} deptCode - 科室编码
    * @param {string} doctorId - 医生ID（可选，用于主管医生维度）

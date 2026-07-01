@@ -3,6 +3,28 @@ const router = express.Router();
 const scoreReminderService = require('../services/scoreReminderService');
 
 /**
+ * 获取科室列表
+ * GET /api/score-reminder/departments
+ */
+router.get('/departments', async (req, res) => {
+  try {
+    const departments = await scoreReminderService.getDepartments();
+
+    res.json({
+      code: 200,
+      data: departments
+    });
+  } catch (error) {
+    console.error('[scoreReminder] 获取科室列表失败:', error.message);
+    res.status(500).json({
+      code: 500,
+      msg: '获取科室列表失败',
+      error: error.message
+    });
+  }
+});
+
+/**
  * 获取待提醒列表
  * GET /api/score-reminder/pending
  */
@@ -96,10 +118,22 @@ router.get('/config', async (req, res) => {
   try {
     const { deptCode } = req.query;
 
+    // deptCode 缺省时返回空/默认配置
     if (!deptCode) {
-      return res.status(400).json({
-        code: 400,
-        msg: '缺少必要参数 deptCode'
+      return res.json({
+        code: 200,
+        data: {
+          deptCode: null,
+          score: {
+            enabled: true,
+            ackSnoozeMinutes: 60,
+            onlyBedPatients: true,
+            patientScope: 'department',
+            rules: []
+          },
+          updatedBy: null,
+          updatedAt: null
+        }
       });
     }
 

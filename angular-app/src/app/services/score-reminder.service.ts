@@ -3,6 +3,12 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { BehaviorSubject, Observable, interval, Subject } from 'rxjs';
 import { switchMap, takeUntil, filter } from 'rxjs/operators';
 
+export interface Department {
+  code: string;
+  name: string;
+  shortName: string;
+}
+
 export interface PendingItem {
   patientId: string;
   patientName: string;
@@ -58,6 +64,15 @@ export class ScoreReminderService {
   private pollInterval = 15 * 60 * 1000; // 15 分钟
 
   constructor(private http: HttpClient) {}
+
+  /**
+   * 获取科室列表
+   */
+  getDepartments(): Observable<{ code: number; data: Department[] }> {
+    return this.http.get<{ code: number; data: Department[] }>(
+      `${this.apiUrl}/departments`
+    );
+  }
 
   /**
    * 获取待提醒列表

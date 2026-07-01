@@ -1,0 +1,141 @@
+<div class="config-container">
+  <h2>评分提醒配置</h2>
+
+  <!-- 科室下拉 -->
+  <div class="form-group">
+    <label for="deptSelect">选择科室</label>
+    <select
+      id="deptSelect"
+      [(ngModel)]="selectedDeptCode"
+      (ngModelChange)="onDeptChange($event)"
+      class="form-control"
+    >
+      <option [ngValue]="null">-- 请选择科室 --</option>
+      <option *ngFor="let dept of departments" [ngValue]="dept.code">
+        {{ getDeptDisplayName(dept) }}
+      </option>
+    </select>
+  </div>
+
+  <!-- 未选择科室提示 -->
+  <div *ngIf="!selectedDeptCode" class="placeholder-message">
+    <p>请先选择科室，再配置评分提醒规则</p>
+  </div>
+
+  <!-- 加载中 -->
+  <div *ngIf="loading" class="loading-message">
+    <p>加载中...</p>
+  </div>
+
+  <!-- 配置表单 -->
+  <div *ngIf="selectedDeptCode && !loading && config" class="config-form">
+    <!-- 基本配置 -->
+    <div class="form-section">
+      <h3>基本配置</h3>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" [(ngModel)]="config.score.enabled">
+          启用评分提醒
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label for="ackSnoozeMinutes">已知晓静默时间（分钟）</label>
+        <input
+          type="number"
+          id="ackSnoozeMinutes"
+          [(ngModel)]="config.score.ackSnoozeMinutes"
+          class="form-control"
+          min="1"
+        >
+      </div>
+
+      <div class="form-group">
+        <label>
+          <input type="checkbox" [(ngModel)]="config.score.onlyBedPatients">
+          只提醒在床患者
+        </label>
+      </div>
+    </div>
+
+    <!-- 评分规则 -->
+    <div class="form-section">
+      <h3>评分规则</h3>
+
+      <div *ngIf="config.score.rules.length === 0" class="empty-rules">
+        <p>暂无规则，请点击下方按钮添加</p>
+      </div>
+
+      <div *ngFor="let rule of config.score.rules; let i = index" class="rule-card">
+        <div class="rule-header">
+          <h4>规则 {{ i + 1 }}</h4>
+          <button class="btn btn-danger btn-sm" (click)="removeRule(i)">删除</button>
+        </div>
+
+        <div class="form-group">
+          <label>评分类型 (scoreType)</label>
+          <input type="text" [(ngModel)]="rule.scoreType" class="form-control" placeholder="如: GCS">
+        </div>
+
+        <div class="form-group">
+          <label>评分名称 (scoreName)</label>
+          <input type="text" [(ngModel)]="rule.scoreName" class="form-control" placeholder="如: 格拉斯哥昏迷评分">
+        </div>
+
+        <div class="form-group">
+          <label>
+            <input type="checkbox" [(ngModel)]="rule.enabled">
+            启用此规则
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label>提醒级别</label>
+          <select [(ngModel)]="rule.level" class="form-control">
+            <option value="low">一般 (low)</option>
+            <option value="mid">重要 (mid)</option>
+            <option value="high">紧急 (high)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>首次提醒时间（小时）</label>
+          <input type="number" [(ngModel)]="rule.firstReminderHours" class="form-control" min="1">
+        </div>
+
+        <div class="form-group">
+          <label>默认评分间隔（天）</label>
+          <input type="number" [(ngModel)]="rule.intervalDays" class="form-control" min="1">
+        </div>
+
+        <!-- 分值范围规则 -->
+        <div class="range-rules-section">
+          <h5>分值范围规则（可选）</h5>
+          <p class="help-text">根据评分分值设置不同的评分间隔</p>
+
+          <div *ngFor="let rangeRule of rule.rangeRules; let j = index" class="range-rule-row">
+            <input type="number" [(ngModel)]="rangeRule.min" class="form-control-sm" placeholder="最小值">
+            <span>~</span>
+            <input type="number" [(ngModel)]="rangeRule.max" class="form-control-sm" placeholder="最大值">
+            <span>间隔</span>
+            <input type="number" [(ngModel)]="rangeRule.intervalDays" class="form-control-sm" placeholder="天数">
+            <span>天</span>
+            <button class="btn btn-danger btn-sm" (click)="removeRangeRule(i, j)">删除</button>
+          </div>
+
+          <button class="btn btn-secondary btn-sm" (click)="addRangeRule(i)">添加分值范围</button>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" (click)="addRule()">添加规则</button>
+    </div>
+
+    <!-- 保存按钮 -->
+    <div class="form-actions">
+      <button class="btn btn-primary" (click)="saveConfig()" [disabled]="saving">
+        {{ saving ? '保存中...' : '保存配置' }}
+      </button>
+    </div>
+  </div>
+</div>
