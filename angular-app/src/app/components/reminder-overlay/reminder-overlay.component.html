@@ -1,0 +1,58 @@
+<div *ngIf="showOverlay" class="overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>评分提醒</h2>
+      <button class="btn-close" (click)="close()">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- 无待提醒 -->
+      <div *ngIf="pendingList.length === 0" class="empty">
+        <p>暂无待评分提醒</p>
+      </div>
+
+      <!-- 按患者分组显示 -->
+      <div *ngIf="pendingList.length > 0" class="patient-groups">
+        <div *ngFor="let patientId of getPatientIds()" class="patient-group">
+          <!-- 患者信息 -->
+          <div class="patient-info">
+            <span class="patient-name">{{ groupedByPatient[patientId][0].patientName }}</span>
+            <span class="patient-bed">{{ groupedByPatient[patientId][0].bedNo }}</span>
+          </div>
+
+          <!-- 评分列表 -->
+          <div class="score-list">
+            <div *ngFor="let item of groupedByPatient[patientId]" class="score-item">
+              <div class="score-header">
+                <span class="score-name">{{ item.scoreName }}</span>
+                <span class="score-level" [style.background-color]="getLevelColor(item.level)">
+                  {{ getLevelLabel(item.level) }}
+                </span>
+              </div>
+
+              <div class="score-detail">
+                <div class="detail-row">
+                  <span class="label">上次评分：</span>
+                  <span class="value">{{ formatTime(item.lastScoreTime) }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">提醒原因：</span>
+                  <span class="value">{{ item.reason }}</span>
+                </div>
+              </div>
+
+              <div class="score-actions">
+                <button class="btn btn-primary btn-sm" (click)="goToScore(item.patientId, item.scoreType)">
+                  去评分
+                </button>
+                <button class="btn btn-secondary btn-sm" (click)="ack(item.patientId, item.scoreType)">
+                  已知晓
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

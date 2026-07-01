@@ -1,6 +1,7 @@
 import { Injectable, NgZone } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
-import { map, distinctUntilChanged } from 'rxjs/operators';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { BehaviorSubject, Observable, interval, Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 /**
  * 账号数据
@@ -21,9 +22,24 @@ export interface Patient {
   id?: string;
   mrn?: string;
   hisPid?: string;
-  name?: string;
+  bedDoctorId?: string;
+  icuAdmissionTime?: number;
   deptCode?: string;
   [key: string]: any;
+}
+
+/**
+ * 待提醒项
+ */
+export interface PendingItem {
+  patientId: string;
+  patientName: string;
+  bedNo: string;
+  scoreType: string;
+  scoreName: string;
+  level: 'low' | 'mid' | 'high';
+  lastScoreTime: string | null;
+  reason: string;
 }
 
 /**
@@ -32,15 +48,17 @@ export interface Patient {
 export type ConnectionStatus = 'waiting' | 'from-cache' | 'connected' | 'origin-rejected';
 
 /**
- * SmartCare postMessage 通信服务（根级单例）
+ * 全局提醒引擎服务（根级单例）
  *
- * ★ 关键设计：在构造函数中立即注册监听器，确保在任何组件渲染前就已挂上
- * 这样能接住宿主"渲染后那一次带数据的 onload 广播"
+ * ★ 关键设计：
+ * 1. 在构造函数中立即注册监听器，确保在任何组件渲染前就已挂上
+ * 2. 使用 APP_INITIALIZER 确保在 bootstrap 阶段实例化
+ * 3. 只用 account.id 触发查询（防抖）
  */
 @Injectable({
   providedIn: 'root'
 })
-export class MessageService {
+export class ReminderEngineService {
   // ── 数据流 ──────────────────────────────────────────────
   private accountSubject = new BehaviorSubject<Account | null>(null);
   account$: Observable<Account | null> = this.accountSubject.asObservable();
@@ -51,28 +69,25 @@ export class MessageService {
   private statusSubject = new BehaviorSubject<ConnectionStatus>('waiting');
   status$: Observable<ConnectionStatus> = this.statusSubject.asObservable();
 
-  // 便捷访问
-  doctorId$: Observable<string> = this.account$.pipe(
-    map(a => a?.id || ''),
-    distinctUntilChanged()
-  );
-  departmentCode$: Observable<string> = this.account$.pipe(
-    map(a => a?.departmentCode || ''),
-    distinctUntilChanged()
-  );
+  private pendingSubject = new BehaviorSubject<PendingItem[]>([]);
+  pending$: Observable<PendingItem[]> = this.pendingSubject.asObservable();
+
+  private showOverlaySubject = new BehaviorSubject<boolean>(false);
+  showOverlay$: Observable<boolean> = this.showOverlaySubject.asObservable();
 
   // ── 内部状态 ──────────────────────────────────────────
-  private currentPatientKey = '';
+  private currentAccountId: string | null = null;
   private lastSignature = '';
   private isPlaceholder = false;
   private lastRequestTime = 0;
   private lastResponseTime = 0;
   private pollTimer: any = null;
+  private destroy$ = new Subject<void>();
 
   // ── 配置 ──────────────────────────────────────────────
-  private readonly POLL_INTERVAL = 3000;
+  private readonly POLL_INTERVAL = 10 * 60 * 1000; // 10 分钟
   private readonly REQUEST_COOLDOWN = 1000;
-  private readonly STORAGE_KEY = 'icu_last_patient';
+  private readonly STORAGE_KEY = 'icu_last_account';
 
   // ── origin 白名单 ─────────────────────────────────────
   private readonly ORIGIN_WHITELIST = [
@@ -88,7 +103,10 @@ export class MessageService {
     'RESPONSE_DATA',
   ];
 
-  constructor(private ngZone: NgZone) {
+  constructor(
+    private http: HttpClient,
+    private ngZone: NgZone
+  ) {
     // ★ 关键：构造函数中立即注册监听器
     this.registerMessageListener();
     this.registerLifecycleEvents();
@@ -103,13 +121,13 @@ export class MessageService {
     // 启动轮询
     this.startPolling();
 
-    console.log('[MessageService] 根级单例已初始化');
+    console.log('[ReminderEngine] 根级单例已初始化');
   }
 
   // ── 注册消息监听 ──────────────────────────────────────
   private registerMessageListener(): void {
     window.addEventListener('message', (event) => this.onMessage(event));
-    console.log('[MessageService] window.message 监听已注册');
+    console.log('[ReminderEngine] window.message 监听已注册');
   }
 
   // ── 消息处理 ──────────────────────────────────────────
@@ -120,7 +138,7 @@ export class MessageService {
     // origin 校验
     if (!this.isAllowedOrigin(event.origin)) {
       this.statusSubject.next('origin-rejected');
-      console.warn(`[MessageService] 来源校验失败: ${event.origin}`);
+      console.warn(`[ReminderEngine] 来源校验失败: ${event.origin}`);
       return;
     }
 
@@ -134,37 +152,37 @@ export class MessageService {
 
       const { account, patient } = normalized;
 
-      if (!patient) {
-        console.warn('[MessageService] 消息无 patient 数据');
+      if (!account) {
+        console.warn('[ReminderEngine] 消息无 account 数据');
         return;
       }
 
       this.processData(normalized);
     } catch (error: any) {
-      console.error('[MessageService] 消息处理失败:', error.message);
+      console.error('[ReminderEngine] 消息处理失败:', error.message);
     }
   }
 
   // ── 数据规范化 ────────────────────────────────────────
-  private normalizeData(data: any): { account: Account; patient: Patient; token?: string } | null {
+  private normalizeData(data: any): { account: Account; patient?: Patient; token?: string } | null {
     // 形态1：直接是 SmartCare 对象
-    if (data.type === 'SmartCare' && data.account && data.patient) {
+    if (data.type === 'SmartCare' && data.account) {
       return { account: data.account, patient: data.patient, token: data.token };
     }
 
     // 形态2：包在 payload 里
     if (this.ACCEPTED_TYPES.includes(data.type)) {
       const p = data.payload || {};
-      if (p.account && p.patient) {
+      if (p.account) {
         return { account: p.account, patient: p.patient, token: p.token };
       }
-      if (data.account && data.patient) {
+      if (data.account) {
         return { account: data.account, patient: data.patient, token: data.token };
       }
     }
 
     // 形态3：兜底识别
-    if (data.account && data.patient) {
+    if (data.account) {
       return { account: data.account, patient: data.patient, token: data.token };
     }
 
@@ -172,31 +190,8 @@ export class MessageService {
   }
 
   // ── 处理数据 ──────────────────────────────────────────
-  private processData(data: { account: Account; patient: Patient; token?: string }): void {
-    const patientKey = this.getPatientKey(data.patient);
-
-    // 唯一键变化 = 切换病人
-    if (patientKey && this.currentPatientKey && patientKey !== this.currentPatientKey) {
-      console.log(`[MessageService] 患者切换: ${this.currentPatientKey} → ${patientKey}`);
-      this.isPlaceholder = false;
-    }
-
-    // 占位模式：无条件覆盖
-    if (this.isPlaceholder) {
-      console.log('[MessageService] 占位缓存被覆盖');
-      this.isPlaceholder = false;
-    }
-
-    // 内容签名去重
-    const signature = JSON.stringify(data);
-    if (patientKey === this.currentPatientKey && signature === this.lastSignature) {
-      return; // 同一患者同内容，跳过
-    }
-
-    // 更新状态
-    this.currentPatientKey = patientKey;
-    this.lastSignature = signature;
-    this.lastResponseTime = Date.now();
+  private processData(data: { account: Account; patient?: Patient; token?: string }): void {
+    const accountId = data.account.id;
 
     // 写入 sessionStorage
     this.persistToStorage(data);
@@ -204,17 +199,37 @@ export class MessageService {
     // 更新数据流
     this.ngZone.run(() => {
       this.accountSubject.next(data.account);
-      this.patientSubject.next(data.patient);
+      if (data.patient) {
+        this.patientSubject.next(data.patient);
+      }
       this.statusSubject.next('connected');
     });
 
-    console.log(`[MessageService] 数据已更新, patientKey=${patientKey}`);
+    // ★ 只用 account.id 触发查询（防抖）
+    if (accountId && accountId !== this.currentAccountId) {
+      this.currentAccountId = accountId;
+      this.loadPending(accountId);
+    }
+
+    console.log(`[ReminderEngine] 数据已更新, accountId=${accountId}`);
   }
 
-  // ── 患者唯一键 ────────────────────────────────────────
-  private getPatientKey(patient: Patient): string {
-    if (!patient) return '';
-    return String(patient.id || patient.mrn || patient.hisPid || '');
+  // ── 加载待提醒列表 ────────────────────────────────────
+  private loadPending(accountId: string): void {
+    const params = new HttpParams().set('accountId', accountId);
+
+    this.http.get<{ code: number; data: PendingItem[] }>('/api/reminder/pending', { params }).subscribe({
+      next: (response) => {
+        if (response.code === 200) {
+          this.pendingSubject.next(response.data);
+          // 有待提醒时显示遮罩
+          this.showOverlaySubject.next(response.data.length > 0);
+        }
+      },
+      error: (error) => {
+        console.error('[ReminderEngine] 加载待提醒列表失败:', error);
+      }
+    });
   }
 
   // ── sessionStorage ────────────────────────────────────
@@ -230,17 +245,23 @@ export class MessageService {
       if (!cached) return;
 
       const data = JSON.parse(cached);
-      const patientKey = this.getPatientKey(data.patient);
-      this.currentPatientKey = patientKey;
       this.isPlaceholder = true;
 
       this.ngZone.run(() => {
         this.accountSubject.next(data.account);
-        this.patientSubject.next(data.patient);
+        if (data.patient) {
+          this.patientSubject.next(data.patient);
+        }
         this.statusSubject.next('from-cache');
       });
 
-      console.log(`[MessageService] 从缓存恢复, patientKey=${patientKey}`);
+      // 用缓存的 accountId 查询
+      if (data.account?.id) {
+        this.currentAccountId = data.account.id;
+        this.loadPending(data.account.id);
+      }
+
+      console.log(`[ReminderEngine] 从缓存恢复, accountId=${data.account?.id}`);
     } catch {}
   }
 
@@ -250,10 +271,10 @@ export class MessageService {
       const target = this.getTarget();
       if (target) {
         target.postMessage({ type: 'HOST_PAGE_READY', payload: { ok: true } }, this.getTargetOrigin());
-        console.log('[MessageService] 已发送 HOST_PAGE_READY');
+        console.log('[ReminderEngine] 已发送 HOST_PAGE_READY');
       }
     } catch (e: any) {
-      console.error('[MessageService] 发送 READY 失败:', e.message);
+      console.error('[ReminderEngine] 发送 READY 失败:', e.message);
     }
   }
 
@@ -263,7 +284,7 @@ export class MessageService {
     if (this.lastRequestTime && (now - this.lastRequestTime < this.REQUEST_COOLDOWN)) return;
 
     this.lastRequestTime = now;
-    console.log(`[MessageService] 请求数据, reason=${reason}`);
+    console.log(`[ReminderEngine] 请求数据, reason=${reason}`);
 
     try {
       const target = this.getTarget();
@@ -271,7 +292,7 @@ export class MessageService {
         target.postMessage({ type: 'REQUEST_HOST_DATA', payload: { reason } }, this.getTargetOrigin());
       }
     } catch (e: any) {
-      console.error('[MessageService] 请求失败:', e.message);
+      console.error('[ReminderEngine] 请求失败:', e.message);
     }
   }
 
@@ -280,11 +301,26 @@ export class MessageService {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         this.requestData('visibilitychange');
+        // 补拉待提醒
+        if (this.currentAccountId) {
+          this.loadPending(this.currentAccountId);
+        }
       }
     });
 
-    window.addEventListener('pageshow', () => this.requestData('pageshow'));
-    window.addEventListener('focus', () => this.requestData('focus'));
+    window.addEventListener('pageshow', () => {
+      this.requestData('pageshow');
+      if (this.currentAccountId) {
+        this.loadPending(this.currentAccountId);
+      }
+    });
+
+    window.addEventListener('focus', () => {
+      this.requestData('focus');
+      if (this.currentAccountId) {
+        this.loadPending(this.currentAccountId);
+      }
+    });
   }
 
   // ── 轮询 ──────────────────────────────────────────────
@@ -296,7 +332,42 @@ export class MessageService {
       if (this.lastRequestTime && (now - this.lastRequestTime < this.REQUEST_COOLDOWN)) return;
 
       this.requestData('poll');
+      if (this.currentAccountId) {
+        this.loadPending(this.currentAccountId);
+      }
     }, this.POLL_INTERVAL);
+  }
+
+  // ── 关闭遮罩 ──────────────────────────────────────────
+  closeOverlay(): void {
+    this.showOverlaySubject.next(false);
+  }
+
+  // ── 确认已知晓 ────────────────────────────────────────
+  ack(patientId: string, scoreType: string): void {
+    if (!this.currentAccountId) return;
+
+    this.http.post<{ code: number; msg: string }>('/api/reminder/ack', {
+      accountId: this.currentAccountId,
+      patientId,
+      scoreType
+    }).subscribe({
+      next: (response) => {
+        if (response.code === 200) {
+          // 从列表中移除
+          const current = this.pendingSubject.value;
+          this.pendingSubject.next(current.filter(
+            item => !(item.patientId === patientId && item.scoreType === scoreType)
+          ));
+
+          // 如果没有待提醒了，关闭遮罩
+          if (this.pendingSubject.value.length === 0) {
+            this.showOverlaySubject.next(false);
+          }
+        }
+      },
+      error: (error) => console.error('[ReminderEngine] 确认已知晓失败:', error)
+    });
   }
 
   // ── 工具方法 ──────────────────────────────────────────
@@ -320,5 +391,7 @@ export class MessageService {
   // ── 清理 ──────────────────────────────────────────────
   ngOnDestroy(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 }

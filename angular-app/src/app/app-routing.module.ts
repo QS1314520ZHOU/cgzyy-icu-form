@@ -1,11 +1,8 @@
 import { NgModule } from '@angular/core';
 import { RouterModule, Routes } from '@angular/router';
-import { ReminderConfigComponent } from './components/reminder-config/reminder-config.component';
-import { ReminderPopupComponent } from './components/reminder-popup/reminder-popup.component';
 
 const routes: Routes = [
-  { path: 'iframe/reminder/config', component: ReminderConfigComponent },
-  { path: 'iframe/reminder/popup', component: ReminderPopupComponent },
+  // 默认路由（空页面，提醒由全局遮罩处理）
   { path: '', redirectTo: 'iframe/reminder/config', pathMatch: 'full' }
 ];
 

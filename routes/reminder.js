@@ -43,7 +43,6 @@ router.get('/config', async (req, res) => {
   try {
     const { deptCode } = req.query;
 
-    // deptCode 缺省时返回空配置
     if (!deptCode) {
       return res.json({
         code: 200,
@@ -135,17 +134,17 @@ router.post('/config/reset', async (req, res) => {
 });
 
 /**
- * 获取待提醒列表
- * GET /api/reminder/pending?deptCode=&doctorId=
+ * 获取待提醒列表（按 accountId）
+ * GET /api/reminder/pending?accountId=
  */
 router.get('/pending', async (req, res) => {
   try {
-    const { deptCode, doctorId } = req.query;
-    if (!deptCode || !doctorId) {
-      return res.status(400).json({ code: 400, msg: '缺少必要参数' });
+    const { accountId } = req.query;
+    if (!accountId) {
+      return res.status(400).json({ code: 400, msg: '缺少必要参数 accountId' });
     }
 
-    const pendingList = await reminderService.getPending(deptCode, doctorId);
+    const pendingList = await reminderService.getPending(accountId);
     res.json({ code: 200, data: pendingList });
   } catch (error) {
     console.error('[reminder] 获取待提醒列表失败:', error.message);
@@ -159,12 +158,12 @@ router.get('/pending', async (req, res) => {
  */
 router.post('/ack', async (req, res) => {
   try {
-    const { deptCode, doctorId, patientId, scoreType } = req.body;
-    if (!deptCode || !doctorId || !patientId || !scoreType) {
+    const { accountId, patientId, scoreType } = req.body;
+    if (!accountId || !patientId || !scoreType) {
       return res.status(400).json({ code: 400, msg: '缺少必要参数' });
     }
 
-    const result = await reminderService.ack(deptCode, doctorId, patientId, scoreType);
+    const result = await reminderService.ack(accountId, patientId, scoreType);
     if (result.success) {
       res.json({ code: 200, msg: '已知晓，静默期内不再提醒' });
     } else {

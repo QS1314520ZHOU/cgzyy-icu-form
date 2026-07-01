@@ -1,7 +1,11 @@
 const moment = require('moment');
+const { ObjectId } = require('mongodb');
 const ScoreReminderConfig = require('../models/ScoreReminderConfig');
 const ScoreReminderAck = require('../models/ScoreReminderAck');
 const { smartCareConn } = require('../config/db');
+
+// 医生/主任职业标识
+const DOCTOR_PROFESSIONS = ['Doctor', 'Director', 'Admin', 'SystemAdmin'];
 
 /**
  * 评分提醒服务
@@ -51,7 +55,6 @@ class ReminderService {
       let config = await ScoreReminderConfig.findOne({ deptCode }).lean();
 
       if (!config) {
-        // 返回默认配置
         config = {
           deptCode,
           ackSnoozeMinutes: 60,
@@ -139,24 +142,40 @@ class ReminderService {
   }
 
   /**
-   * 获取待提醒列表
+   * 获取待提醒列表（按 accountId）
+   *
+   * 判定逻辑：
+   * 1. 鉴权：account 有效(valid) 且 profession ∈ Doctor/Director
+   * 2. deptCode = account.departmentCode
+   * 3. config = score_reminder_config.findOne({deptCode})
+   * 4. patients = patient.find({deptCode, status:'admitted'})
+   * 5. 每个 patient × 每个 enabled 配置项(scoreType) 判定
    */
-  async getPending(deptCode, doctorId) {
+  async getPending(accountId) {
     try {
-      // 1. 获取配置
+      // 1. 鉴权
+      const acc = await this.getAccount(accountId);
+      if (!acc) {
+        console.log(`[ReminderService] 账号不存在或无效: ${accountId}`);
+        return [];
+      }
+
+      const deptCode = acc.departmentCode;
+
+      // 2. 获取配置
       const config = await this.getConfig(deptCode);
       if (!config || !config.items || config.items.length === 0) {
         return [];
       }
 
-      // 2. 获取启用的规则
+      // 3. 获取启用的规则
       const enabledItems = config.items.filter(item => item.enabled);
       if (enabledItems.length === 0) {
         return [];
       }
 
-      // 3. 获取医生管辖的在床患者
-      const patients = await this.getPatients(deptCode, doctorId);
+      // 4. 获取科室在床患者
+      const patients = await this.getPatients(deptCode);
       if (patients.length === 0) {
         return [];
       }
@@ -164,11 +183,11 @@ class ReminderService {
       const now = new Date();
       const pendingList = [];
 
-      // 4. 遍历患者 × 规则
+      // 5. 遍历患者 × 规则
       for (const patient of patients) {
         for (const item of enabledItems) {
           // 获取最近一次评分
-          const lastScore = await this.getLastScore(patient._id.toString(), item.scoreType);
+          const lastScore = await this.getLastScore(patient.id, item.scoreType);
 
           // 判定是否到期
           const expiredResult = this.checkExpired({
@@ -183,7 +202,7 @@ class ReminderService {
           }
 
           // 检查是否被 ack 静默
-          const ack = await this.getAck(doctorId, patient._id.toString(), item.scoreType);
+          const ack = await this.getAck(accountId, patient.id, item.scoreType);
           const isSilent = this.checkAckSilent({
             ack,
             lastScore,
@@ -197,7 +216,7 @@ class ReminderService {
 
           // 计入 pending
           pendingList.push({
-            patientId: patient._id.toString(),
+            patientId: patient.id,
             patientName: patient.name,
             bedNo: patient.hisBed,
             scoreType: item.scoreType,
@@ -217,23 +236,33 @@ class ReminderService {
   }
 
   /**
-   * 获取医生管辖的在床患者
+   * 获取账号信息
    */
-  async getPatients(deptCode, doctorId) {
+  async getAccount(accountId) {
     try {
-      const Patient = smartCareConn.model('Patient');
-      const query = {
-        deptCode,
-        status: 'admitted',
-        valid: true
-      };
+      const Account = smartCareConn.model('Account');
+      const acc = await Account.findOne({ _id: new ObjectId(accountId) }).lean();
 
-      if (doctorId) {
-        query.bedDoctorId = doctorId;
+      // 校验：存在、有效、是医生/主任
+      if (!acc || acc.valid !== 'valid' || !DOCTOR_PROFESSIONS.includes(acc.profession)) {
+        return null;
       }
 
-      return await Patient.find(query)
-        .select('_id name hisBed deptCode status icuAdmissionTime bedDoctorId')
+      return acc;
+    } catch (error) {
+      console.error('[ReminderService] 获取账号失败:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * 获取科室在床患者
+   */
+  async getPatients(deptCode) {
+    try {
+      const Patient = smartCareConn.model('Patient');
+      return await Patient.find({ deptCode, status: 'admitted' })
+        .select('id name hisBed deptCode status icuAdmissionTime bedDoctorId')
         .lean();
     } catch (error) {
       console.error('[ReminderService] 获取患者失败:', error.message);
@@ -264,9 +293,9 @@ class ReminderService {
   /**
    * 获取 ack 记录
    */
-  async getAck(doctorId, patientId, scoreType) {
+  async getAck(accountId, patientId, scoreType) {
     try {
-      return await ScoreReminderAck.findOne({ doctorId, patientId, scoreType }).lean();
+      return await ScoreReminderAck.findOne({ accountId, patientId, scoreType }).lean();
     } catch (error) {
       console.error('[ReminderService] 获取 ack 失败:', error.message);
       return null;
@@ -281,8 +310,9 @@ class ReminderService {
 
     // 无评分记录
     if (!lastScore) {
-      const admissionTime = moment(icuAdmissionTime);
-      const hoursSinceAdmission = moment(now).diff(admissionTime, 'hours');
+      // icuAdmissionTime 是毫秒时间戳
+      const admissionTime = new Date(icuAdmissionTime);
+      const hoursSinceAdmission = (now.getTime() - admissionTime.getTime()) / (1000 * 60 * 60);
 
       if (hoursSinceAdmission >= item.admissionNoScoreHours) {
         return {
@@ -295,8 +325,8 @@ class ReminderService {
     }
 
     // 有评分记录
-    const lastScoreTime = moment(lastScore.time);
-    const hoursSinceLastScore = moment(now).diff(lastScoreTime, 'hours');
+    const lastScoreTime = new Date(lastScore.time);
+    const hoursSinceLastScore = (now.getTime() - lastScoreTime.getTime()) / (1000 * 60 * 60);
 
     // 检查是否命中 rangeRules
     let intervalDays = item.intervalDays;
@@ -338,8 +368,8 @@ class ReminderService {
     }
 
     // 检查是否在静默期内
-    const ackTime = moment(ack.ackTime);
-    const minutesSinceAck = moment(now).diff(ackTime, 'minutes');
+    const ackTime = new Date(ack.ackTime);
+    const minutesSinceAck = (now.getTime() - ackTime.getTime()) / (1000 * 60);
 
     return minutesSinceAck < ackSnoozeMinutes;
   }
@@ -347,11 +377,11 @@ class ReminderService {
   /**
    * 确认已知晓
    */
-  async ack(deptCode, doctorId, patientId, scoreType) {
+  async ack(accountId, patientId, scoreType) {
     try {
       const result = await ScoreReminderAck.findOneAndUpdate(
-        { doctorId, patientId, scoreType },
-        { deptCode, doctorId, patientId, scoreType, ackTime: new Date() },
+        { accountId, patientId, scoreType },
+        { accountId, patientId, scoreType, ackTime: new Date() },
         { upsert: true, new: true }
       );
 
