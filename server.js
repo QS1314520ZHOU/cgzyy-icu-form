@@ -5,8 +5,14 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, 'public');
 
+// 路由
+const scoreReminderRouter = require('./routes/scoreReminder');
+
 app.use(express.json());
 app.use(express.static(publicDir));
+
+// 挂载路由
+app.use('/api/score-reminder', scoreReminderRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({
