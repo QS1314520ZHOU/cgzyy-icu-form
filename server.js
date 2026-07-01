@@ -27,8 +27,8 @@ const reminderRouter = require('./routes/reminder');
 
 app.use(express.json());
 
-// 1. 先注册所有后端接口路由
-app.use('/api', reminderRouter);
+// 1. 先注册所有后端接口路由（统一在 /api/reminder/* 下）
+app.use('/api/reminder', reminderRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({

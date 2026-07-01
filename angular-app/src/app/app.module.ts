@@ -6,21 +6,21 @@ import { FormsModule } from '@angular/forms';
 
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
+import { ReminderConfigComponent } from './components/reminder-config/reminder-config.component';
+import { ReminderPopupComponent } from './components/reminder-popup/reminder-popup.component';
 import { ReminderOverlayComponent } from './components/reminder-overlay/reminder-overlay.component';
 
 import { ReminderEngineService } from './services/reminder-engine.service';
 
-/**
- * APP_INITIALIZER 工厂函数
- * 确保 ReminderEngineService 在 bootstrap 阶段就被实例化
- */
-function reminderEngineFactory(reminderEngine: ReminderEngineService) {
+function reminderEngineFactory(engine: ReminderEngineService) {
   return () => Promise.resolve();
 }
 
 @NgModule({
   declarations: [
     AppComponent,
+    ReminderConfigComponent,
+    ReminderPopupComponent,
     ReminderOverlayComponent
   ],
   imports: [
@@ -32,12 +32,7 @@ function reminderEngineFactory(reminderEngine: ReminderEngineService) {
   ],
   providers: [
     ReminderEngineService,
-    {
-      provide: APP_INITIALIZER,
-      useFactory: reminderEngineFactory,
-      deps: [ReminderEngineService],
-      multi: true
-    }
+    { provide: APP_INITIALIZER, useFactory: reminderEngineFactory, deps: [ReminderEngineService], multi: true }
   ],
   bootstrap: [AppComponent]
 })

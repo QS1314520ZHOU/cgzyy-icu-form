@@ -2,3 +2,5 @@
 .npm-cache/
 .env
 .history/
+angular-app/dist/
+.angular/
