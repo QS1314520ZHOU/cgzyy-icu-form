@@ -139,7 +139,7 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
       if (si) this.config.items.push({
         scoreType, scoreName: si.scoreName,
         group: this.doctorScoreList.includes(si) ? 'doctor' : 'nurse',
-        enabled: true, level: 'mid', admissionNoScoreHours: 24, intervalDays: 7, rangeRules: []
+        enabled: false, level: 'mid', admissionNoScoreHours: 24, intervalDays: 7, rangeRules: []
       });
     }
   }
