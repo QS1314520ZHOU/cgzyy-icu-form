@@ -35,26 +35,78 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
   constructor(private http: HttpClient, private reminderEngine: ReminderEngineService) {}
 
   ngOnInit(): void {
-    this.subscriptions.push(
-      this.reminderEngine.account$.subscribe(account => {
-        this.account = account;
-        if (account?.departmentCode && !this.selectedDeptCode) {
-          this.selectedDeptCode = account.departmentCode;
-          this.loadScoreItems(account.departmentCode);
-          this.loadConfig(account.departmentCode);
-        }
-      })
-    );
     this.loadDepartments();
   }
 
   ngOnDestroy(): void { this.subscriptions.forEach(s => s.unsubscribe()); }
 
+  /**
+   * 加载科室列表，并按账号 departmentCode 默认选中
+   */
   loadDepartments(): void {
     this.http.get<{code:number;data:Department[]}>('/api/reminder/departments').subscribe({
-      next: r => { if (r.code === 200) this.departments = r.data; },
+      next: r => {
+        if (r.code === 200) {
+          this.departments = r.data;
+          this.setDefaultDept();
+        }
+      },
       error: e => console.error('加载科室失败:', e)
     });
+  }
+
+  /**
+   * 设置默认科室（按账号 departmentCode，多科室取第一个）
+   */
+  private setDefaultDept(): void {
+    // 从 sessionStorage 读取缓存的账号数据
+    let deptCode: string | null = null;
+    try {
+      const cached = sessionStorage.getItem('icu_last_account');
+      if (cached) {
+        const data = JSON.parse(cached);
+        deptCode = data?.account?.departmentCode || null;
+      }
+    } catch {}
+
+    // 如果缓存没有，尝试从 ReminderEngineService 获取
+    if (!deptCode) {
+      this.subscriptions.push(
+        this.reminderEngine.account$.subscribe(account => {
+          this.account = account;
+          if (account?.departmentCode && !this.selectedDeptCode) {
+            this.applyDefaultDept(account.departmentCode);
+          }
+        })
+      );
+      return;
+    }
+
+    this.applyDefaultDept(deptCode);
+  }
+
+  /**
+   * 应用默认科室（支持逗号分隔多科室，取第一个）
+   */
+  private applyDefaultDept(deptCodeStr: string): void {
+    // 按逗号分隔，取第一个
+    const firstCode = deptCodeStr.split(',')[0].trim();
+
+    // 检查是否在科室列表中
+    const found = this.departments.find(d => d.code === firstCode);
+
+    if (found) {
+      this.selectedDeptCode = firstCode;
+    } else if (this.departments.length > 0) {
+      // 回退到列表第一项
+      this.selectedDeptCode = this.departments[0].code;
+    }
+
+    // 加载评分项和配置
+    if (this.selectedDeptCode) {
+      this.loadScoreItems(this.selectedDeptCode);
+      this.loadConfig(this.selectedDeptCode);
+    }
   }
 
   onDeptChange(deptCode: string): void {

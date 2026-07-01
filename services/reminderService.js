@@ -1,4 +1,3 @@
-const moment = require('moment');
 const { ObjectId } = require('mongodb');
 const ScoreReminderConfig = require('../models/ScoreReminderConfig');
 const ScoreReminderAck = require('../models/ScoreReminderAck');
@@ -9,16 +8,27 @@ const DOCTOR_PROFESSIONS = ['Doctor', 'Director', 'Admin', 'SystemAdmin'];
 
 /**
  * 评分提醒服务
+ *
+ * ★ 关键：外部只读集合（department/account/patient/score/initSystemConfig）
+ * 用 smartCareConn.collection() 原生查询，避免 MissingSchemaError 和复数化问题。
+ * 内部集合（score_reminder_config/score_reminder_ack）保持用 mongoose 模型。
  */
 class ReminderService {
   /**
    * 获取科室列表
+   * 集合名：department（单数，Spring 存的）
    */
   async getDepartments() {
     try {
-      const Department = smartCareConn.model('Department');
-      const departments = await Department.find({}).select('code name shortName').lean();
-      return departments || [];
+      const docs = await smartCareConn.collection('department')
+        .find({}, { projection: { code: 1, name: 1, shortName: 1 } })
+        .toArray();
+
+      return (docs || []).map(d => ({
+        code: d.code || '',
+        name: d.name || '',
+        shortName: d.shortName || ''
+      }));
     } catch (error) {
       console.error('[ReminderService] 获取科室列表失败:', error.message);
       return [];
@@ -27,11 +37,12 @@ class ReminderService {
 
   /**
    * 获取评分项（从 initSystemConfig.scoreConfig）
+   * 集合名：initSystemConfig（驼峰，Spring 存的）
    */
   async getScoreItems(deptCode) {
     try {
-      const InitSystemConfig = smartCareConn.model('InitSystemConfig');
-      const config = await InitSystemConfig.findOne({ deptCode }).lean();
+      const config = await smartCareConn.collection('initSystemConfig')
+        .findOne({ deptCode });
 
       if (!config || !config.scoreConfig) {
         return { doctorScoreList: [], nurseScoreList: [] };
@@ -48,7 +59,7 @@ class ReminderService {
   }
 
   /**
-   * 获取提醒配置
+   * 获取提醒配置（内部集合，用 mongoose 模型）
    */
   async getConfig(deptCode) {
     try {
@@ -142,14 +153,12 @@ class ReminderService {
   }
 
   /**
-   * 获取待提醒列表（按 accountId）
+   * 获取待提醒列表（按 accountId，支持多科室）
    *
    * 判定逻辑：
-   * 1. 鉴权：account 有效(valid) 且 profession ∈ Doctor/Director
-   * 2. deptCode = account.departmentCode
-   * 3. config = score_reminder_config.findOne({deptCode})
-   * 4. patients = patient.find({deptCode, status:'admitted'})
-   * 5. 每个 patient × 每个 enabled 配置项(scoreType) 判定
+   * 1. 鉴权：account 有效(valid) 且 profession ∈ DOCTOR_PROFESSIONS
+   * 2. deptCode = account.departmentCode（可能逗号分隔，如 "125011,123"）
+   * 3. 对每个科室分别取 config + 在床患者计算，合并 pending 结果
    */
   async getPending(accountId) {
     try {
@@ -160,21 +169,45 @@ class ReminderService {
         return [];
       }
 
-      const deptCode = acc.departmentCode;
+      // 2. 解析科室（支持逗号分隔多科室）
+      const deptCodes = (acc.departmentCode || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (deptCodes.length === 0) {
+        console.log(`[ReminderService] 账号无 departmentCode: ${accountId}`);
+        return [];
+      }
 
-      // 2. 获取配置
+      // 3. 对每个科室分别计算
+      const allPending = [];
+      for (const deptCode of deptCodes) {
+        const pending = await this.getPendingForDept(accountId, deptCode);
+        allPending.push(...pending);
+      }
+
+      return allPending;
+    } catch (error) {
+      console.error('[ReminderService] 获取待提醒列表失败:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * 获取单个科室的待提醒列表
+   */
+  async getPendingForDept(accountId, deptCode) {
+    try {
+      // 获取配置
       const config = await this.getConfig(deptCode);
       if (!config || !config.items || config.items.length === 0) {
         return [];
       }
 
-      // 3. 获取启用的规则
+      // 获取启用的规则
       const enabledItems = config.items.filter(item => item.enabled);
       if (enabledItems.length === 0) {
         return [];
       }
 
-      // 4. 获取科室在床患者
+      // 获取科室在床患者
       const patients = await this.getPatients(deptCode);
       if (patients.length === 0) {
         return [];
@@ -183,7 +216,7 @@ class ReminderService {
       const now = new Date();
       const pendingList = [];
 
-      // 5. 遍历患者 × 规则
+      // 遍历患者 × 规则
       for (const patient of patients) {
         for (const item of enabledItems) {
           // 获取最近一次评分
@@ -230,18 +263,19 @@ class ReminderService {
 
       return pendingList;
     } catch (error) {
-      console.error('[ReminderService] 获取待提醒列表失败:', error.message);
+      console.error(`[ReminderService] 获取科室 ${deptCode} 待提醒失败:`, error.message);
       return [];
     }
   }
 
   /**
    * 获取账号信息
+   * 集合名：account（单数，Spring 存的）
    */
   async getAccount(accountId) {
     try {
-      const Account = smartCareConn.model('Account');
-      const acc = await Account.findOne({ _id: new ObjectId(accountId) }).lean();
+      const acc = await smartCareConn.collection('account')
+        .findOne({ _id: new ObjectId(accountId) });
 
       // 校验：存在、有效、是医生/主任
       if (!acc || acc.valid !== 'valid' || !DOCTOR_PROFESSIONS.includes(acc.profession)) {
@@ -257,13 +291,23 @@ class ReminderService {
 
   /**
    * 获取科室在床患者
+   * 集合名：patient（单数，Spring 存的）
    */
   async getPatients(deptCode) {
     try {
-      const Patient = smartCareConn.model('Patient');
-      return await Patient.find({ deptCode, status: 'admitted' })
-        .select('id name hisBed deptCode status icuAdmissionTime bedDoctorId')
-        .lean();
+      const docs = await smartCareConn.collection('patient')
+        .find({ deptCode, status: 'admitted' })
+        .toArray();
+
+      return (docs || []).map(d => ({
+        id: d.id || (d._id ? d._id.toString() : ''),
+        name: d.name || '',
+        hisBed: d.hisBed || '',
+        deptCode: d.deptCode || '',
+        status: d.status || '',
+        icuAdmissionTime: d.icuAdmissionTime || null,
+        bedDoctorId: d.bedDoctorId || ''
+      }));
     } catch (error) {
       console.error('[ReminderService] 获取患者失败:', error.message);
       return [];
@@ -272,18 +316,17 @@ class ReminderService {
 
   /**
    * 获取最近一次评分
+   * 集合名：score（单数，Spring 存的）
    */
   async getLastScore(patientId, scoreType) {
     try {
-      const Score = smartCareConn.model('Score');
-      return await Score.findOne({
-        pid: patientId,
-        scoreType,
-        valid: true
-      })
+      const docs = await smartCareConn.collection('score')
+        .find({ pid: patientId, scoreType, valid: true })
         .sort({ time: -1 })
-        .select('time total')
-        .lean();
+        .limit(1)
+        .toArray();
+
+      return docs.length > 0 ? docs[0] : null;
     } catch (error) {
       console.error('[ReminderService] 获取评分失败:', error.message);
       return null;
@@ -291,7 +334,7 @@ class ReminderService {
   }
 
   /**
-   * 获取 ack 记录
+   * 获取 ack 记录（内部集合，用 mongoose 模型）
    */
   async getAck(accountId, patientId, scoreType) {
     try {
