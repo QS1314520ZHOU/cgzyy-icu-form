@@ -23,9 +23,9 @@
 .toggle-label{display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;color:#374151}
 .toggle-label input[type="checkbox"]{width:16px;height:16px;cursor:pointer}
 .rule-block{border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:12px;background:#fafafa}
-.rule-block.disabled{opacity:.5;pointer-events:none}
 .rule-header{margin-bottom:8px}
 .rule-body{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:#4b5563}
+.rule-body.disabled{opacity:.5;pointer-events:none}
 .range-rule-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:#4b5563}
 .btn{padding:8px 16px;border-radius:6px;font-size:14px;font-weight:500;cursor:pointer;border:none}
 .btn-primary{background:#3b82f6;color:#fff}.btn-primary:hover:not(:disabled){background:#2563eb}

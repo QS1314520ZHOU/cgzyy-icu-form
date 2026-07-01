@@ -71,19 +71,18 @@
         </div>
 
         <!-- A: 入科未评分 -->
-        <!-- ★ 规则勾选框永远可点，不绑 [disabled]="!item.enabled" -->
-        <div class="rule-block" [class.disabled]="!item.admissionRule.enabled">
+        <!-- ★ header 始终可点，disabled 只作用于 body -->
+        <div class="rule-block">
           <div class="rule-header">
             <label class="toggle-label">
               <input type="checkbox" [(ngModel)]="item.admissionRule.enabled">
               <span>A. 入科未评分即弹框</span>
             </label>
           </div>
-          <!-- ★ 仅规则内部输入框用 [disabled]="!该规则.enabled" -->
-          <div class="rule-body">
+          <div class="rule-body" [class.disabled]="!item.admissionRule.enabled">
             <span>入科</span>
-            <input type="number" [(ngModel)]="item.admissionRule.value" class="form-control-sm" min="1" [disabled]="!item.admissionRule.enabled">
-            <select [(ngModel)]="item.admissionRule.unit" class="form-control-sm" [disabled]="!item.admissionRule.enabled">
+            <input type="number" [(ngModel)]="item.admissionRule.value" class="form-control-sm" min="1">
+            <select [(ngModel)]="item.admissionRule.unit" class="form-control-sm">
               <option value="hour">小时</option>
               <option value="day">天</option>
             </select>
@@ -92,17 +91,17 @@
         </div>
 
         <!-- B: 固定间隔 -->
-        <div class="rule-block" [class.disabled]="!item.intervalRule.enabled">
+        <div class="rule-block">
           <div class="rule-header">
             <label class="toggle-label">
               <input type="checkbox" [(ngModel)]="item.intervalRule.enabled">
               <span>B. 距上次评分固定间隔</span>
             </label>
           </div>
-          <div class="rule-body">
+          <div class="rule-body" [class.disabled]="!item.intervalRule.enabled">
             <span>距上次评分</span>
-            <input type="number" [(ngModel)]="item.intervalRule.value" class="form-control-sm" min="1" [disabled]="!item.intervalRule.enabled">
-            <select [(ngModel)]="item.intervalRule.unit" class="form-control-sm" [disabled]="!item.intervalRule.enabled">
+            <input type="number" [(ngModel)]="item.intervalRule.value" class="form-control-sm" min="1">
+            <select [(ngModel)]="item.intervalRule.unit" class="form-control-sm">
               <option value="hour">小时</option>
               <option value="day">天</option>
             </select>
@@ -111,28 +110,28 @@
         </div>
 
         <!-- C: 分值区间间隔 -->
-        <div class="rule-block" [class.disabled]="!item.rangeRule.enabled">
+        <div class="rule-block">
           <div class="rule-header">
             <label class="toggle-label">
               <input type="checkbox" [(ngModel)]="item.rangeRule.enabled">
               <span>C. 分值区间间隔复评</span>
             </label>
           </div>
-          <div class="rule-body">
+          <div class="rule-body" [class.disabled]="!item.rangeRule.enabled">
             <div *ngFor="let r of item.rangeRule.rules; let i = index" class="range-rule-row">
               <span>分值</span>
-              <input type="number" [(ngModel)]="r.min" class="form-control-sm" [disabled]="!item.rangeRule.enabled">
+              <input type="number" [(ngModel)]="r.min" class="form-control-sm">
               <span>~</span>
-              <input type="number" [(ngModel)]="r.max" class="form-control-sm" [disabled]="!item.rangeRule.enabled">
+              <input type="number" [(ngModel)]="r.max" class="form-control-sm">
               <span>间隔</span>
-              <input type="number" [(ngModel)]="r.value" class="form-control-sm" min="1" [disabled]="!item.rangeRule.enabled">
-              <select [(ngModel)]="r.unit" class="form-control-sm" [disabled]="!item.rangeRule.enabled">
+              <input type="number" [(ngModel)]="r.value" class="form-control-sm" min="1">
+              <select [(ngModel)]="r.unit" class="form-control-sm">
                 <option value="hour">小时</option>
                 <option value="day">天</option>
               </select>
-              <button class="btn btn-danger btn-sm" (click)="removeRangeRuleItem(i)" [disabled]="!item.rangeRule.enabled">删除</button>
+              <button class="btn btn-danger btn-sm" (click)="removeRangeRuleItem(i)">删除</button>
             </div>
-            <button class="btn btn-secondary btn-sm" (click)="addRangeRuleItem()" [disabled]="!item.rangeRule.enabled">添加规则</button>
+            <button class="btn btn-secondary btn-sm" (click)="addRangeRuleItem()">添加规则</button>
           </div>
         </div>
       </div>
