@@ -60,6 +60,7 @@ class ReminderService {
 
   /**
    * 获取提醒配置（内部集合，用 mongoose 模型）
+   * ★ 兼容旧数据：若只有 ackSnoozeMinutes，则映射为 ackSnooze
    */
   async getConfig(deptCode) {
     try {
@@ -68,11 +69,19 @@ class ReminderService {
       if (!config) {
         config = {
           deptCode,
-          ackSnoozeMinutes: 60,
+          ackSnooze: { value: 60, unit: 'minute' },
           items: [],
           updatedBy: null,
           updatedAt: null
         };
+      }
+
+      // 兼容旧数据：ackSnoozeMinutes → ackSnooze
+      if (!config.ackSnooze && config.ackSnoozeMinutes) {
+        config.ackSnooze = { value: config.ackSnoozeMinutes, unit: 'minute' };
+      }
+      if (!config.ackSnooze) {
+        config.ackSnooze = { value: 60, unit: 'minute' };
       }
 
       return config;
@@ -91,7 +100,7 @@ class ReminderService {
         { deptCode },
         {
           deptCode,
-          ackSnoozeMinutes: config.ackSnoozeMinutes || 60,
+          ackSnooze: config.ackSnooze || { value: 60, unit: 'minute' },
           items: config.items || [],
           updatedBy,
           updatedAt: new Date()
@@ -122,7 +131,7 @@ class ReminderService {
           { deptCode: targetDeptCode },
           {
             deptCode: targetDeptCode,
-            ackSnoozeMinutes: sourceConfig.ackSnoozeMinutes,
+            ackSnooze: sourceConfig.ackSnooze || { value: 60, unit: 'minute' },
             items: sourceConfig.items,
             updatedBy,
             updatedAt: new Date()
@@ -236,10 +245,12 @@ class ReminderService {
 
           // 检查是否被 ack 静默
           const ack = await this.getAck(accountId, patient.id, item.scoreType);
+          const ackSnooze = config.ackSnooze || { value: 60, unit: 'minute' };
+          const snoozeMs = this.toMs(ackSnooze.value, ackSnooze.unit);
           const isSilent = this.checkAckSilent({
             ack,
             lastScore,
-            ackSnoozeMinutes: config.ackSnoozeMinutes || 60,
+            snoozeMs,
             now
           });
 
@@ -349,9 +360,10 @@ class ReminderService {
    * 时间单位转毫秒
    */
   toMs(value, unit) {
+    if (unit === 'minute') return value * 60 * 1000;
     if (unit === 'hour') return value * 3600 * 1000;
     if (unit === 'day') return value * 24 * 3600 * 1000;
-    return value * 3600 * 1000; // 默认小时
+    return value * 60 * 1000; // 默认分钟
   }
 
   /**
@@ -422,9 +434,10 @@ class ReminderService {
 
   /**
    * 检查是否被 ack 静默
+   * ★ snoozeMs：已知晓后多久再提示（毫秒）
    */
   checkAckSilent(params) {
-    const { ack, lastScore, ackSnoozeMinutes, now } = params;
+    const { ack, lastScore, snoozeMs, now } = params;
 
     if (!ack) {
       return false;
@@ -437,9 +450,9 @@ class ReminderService {
 
     // 检查是否在静默期内
     const ackTime = new Date(ack.ackTime);
-    const minutesSinceAck = (now.getTime() - ackTime.getTime()) / (1000 * 60);
+    const msSinceAck = now.getTime() - ackTime.getTime();
 
-    return minutesSinceAck < ackSnoozeMinutes;
+    return msSinceAck < snoozeMs;
   }
 
   /**

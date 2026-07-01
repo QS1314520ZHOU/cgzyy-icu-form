@@ -8,6 +8,7 @@ interface ScoreItem { realName: string; scoreName: string; scoreType: string; co
 interface RangeRuleItem { min: number|null; max: number|null; value: number; unit: 'hour'|'day'; }
 interface RuleConfig { enabled: boolean; value: number; unit: 'hour'|'day'; }
 interface RangeRuleConfig { enabled: boolean; rules: RangeRuleItem[]; }
+interface AckSnooze { value: number; unit: 'minute'|'hour'|'day'; }
 interface ReminderItem {
   scoreType: string; scoreName: string; group: 'doctor'|'nurse';
   enabled: boolean; level: 'low'|'mid'|'high';
@@ -15,7 +16,7 @@ interface ReminderItem {
   intervalRule: RuleConfig;
   rangeRule: RangeRuleConfig;
 }
-interface ReminderConfig { deptCode: string; ackSnoozeMinutes: number; items: ReminderItem[]; updatedBy: string; updatedAt: string; }
+interface ReminderConfig { deptCode: string; ackSnooze: AckSnooze; items: ReminderItem[]; updatedBy: string; updatedAt: string; }
 
 // ★ 默认规则结构（深拷贝用）
 const DEFAULT_ADMISSION_RULE = (): RuleConfig => ({ enabled: false, value: 24, unit: 'hour' });
@@ -125,6 +126,10 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
         if (r.code === 200) {
           this.config = r.data;
           if (!this.config.items) this.config.items = [];
+          // ★ 兼容旧数据：确保 ackSnooze 存在
+          if (!this.config.ackSnooze) {
+            this.config.ackSnooze = { value: 60, unit: 'minute' };
+          }
           // ★ 确保所有项都有完整的规则结构（深拷贝默认值）
           this.config.items = this.config.items.map(i => this.normalizeItem(i));
         }
@@ -208,9 +213,9 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
   saveConfig(): void {
     if (!this.selectedDeptCode || !this.config) return;
     this.saving = true;
-    // ★ 保存时确保每个 item 完整包含所有字段
+    // ★ 保存时确保完整包含 ackSnooze 和每个 item
     const configToSave = {
-      ...this.config,
+      ackSnooze: this.config.ackSnooze || { value: 60, unit: 'minute' },
       items: this.config.items.map(item => ({
         scoreType: item.scoreType,
         scoreName: item.scoreName,

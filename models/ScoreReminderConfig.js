@@ -34,6 +34,12 @@ const RangeRuleSchema = new mongoose.Schema({
   rules: [RangeRuleItemSchema]
 }, { _id: false });
 
+// 已知晓静默配置
+const AckSnoozeSchema = new mongoose.Schema({
+  value: { type: Number, default: 60 },
+  unit: { type: String, enum: ['minute', 'hour', 'day'], default: 'minute' }
+}, { _id: false });
+
 // 评分项
 const ItemSchema = new mongoose.Schema({
   scoreType: { type: String, required: true },
@@ -48,7 +54,7 @@ const ItemSchema = new mongoose.Schema({
 
 const ScoreReminderConfigSchema = new mongoose.Schema({
   deptCode: { type: String, required: true, unique: true },
-  ackSnoozeMinutes: { type: Number, default: 60 },
+  ackSnooze: { type: AckSnoozeSchema, default: () => ({ value: 60, unit: 'minute' }) },
   items: [ItemSchema],
   updatedBy: { type: String },
   updatedAt: { type: Date, default: Date.now }

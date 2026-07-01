@@ -18,6 +18,20 @@
   <div *ngIf="loading" class="placeholder"><p>加载中...</p></div>
 
   <div *ngIf="selectedDeptCode && !loading" class="main-content">
+    <!-- 全局设置 -->
+    <div class="global-settings" *ngIf="config">
+      <div class="setting-row">
+        <label>已知晓后</label>
+        <input type="number" [(ngModel)]="config.ackSnooze.value" class="form-control-sm" min="1">
+        <select [(ngModel)]="config.ackSnooze.unit" class="form-control-sm">
+          <option value="minute">分钟</option>
+          <option value="hour">小时</option>
+          <option value="day">天</option>
+        </select>
+        <span>再提示</span>
+      </div>
+    </div>
+
     <!-- 左侧分类 -->
     <div class="sidebar">
       <div class="category active"><span>📋</span><span>评分</span></div>
