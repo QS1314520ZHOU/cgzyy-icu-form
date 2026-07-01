@@ -5,11 +5,15 @@ import { ReminderEngineService, Account } from '../../services/reminder-engine.s
 
 interface Department { code: string; name: string; shortName: string; }
 interface ScoreItem { realName: string; scoreName: string; scoreType: string; configurable: boolean; }
-interface RangeRule { min: number; max: number; intervalDays: number; }
+interface RangeRuleItem { min: number; max: number; value: number; unit: 'hour'|'day'; }
+interface RuleConfig { enabled: boolean; value: number; unit: 'hour'|'day'; }
+interface RangeRuleConfig { enabled: boolean; rules: RangeRuleItem[]; }
 interface ReminderItem {
   scoreType: string; scoreName: string; group: 'doctor'|'nurse';
   enabled: boolean; level: 'low'|'mid'|'high';
-  admissionNoScoreHours: number; intervalDays: number; rangeRules: RangeRule[];
+  admissionRule: RuleConfig;
+  intervalRule: RuleConfig;
+  rangeRule: RangeRuleConfig;
 }
 interface ReminderConfig { deptCode: string; ackSnoozeMinutes: number; items: ReminderItem[]; updatedBy: string; updatedAt: string; }
 
@@ -40,9 +44,6 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void { this.subscriptions.forEach(s => s.unsubscribe()); }
 
-  /**
-   * 加载科室列表，并按账号 departmentCode 默认选中
-   */
   loadDepartments(): void {
     this.http.get<{code:number;data:Department[]}>('/api/reminder/departments').subscribe({
       next: r => {
@@ -55,11 +56,7 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
     });
   }
 
-  /**
-   * 设置默认科室（按账号 departmentCode，多科室取第一个）
-   */
   private setDefaultDept(): void {
-    // 从 sessionStorage 读取缓存的账号数据
     let deptCode: string | null = null;
     try {
       const cached = sessionStorage.getItem('icu_last_account');
@@ -69,7 +66,6 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
       }
     } catch {}
 
-    // 如果缓存没有，尝试从 ReminderEngineService 获取
     if (!deptCode) {
       this.subscriptions.push(
         this.reminderEngine.account$.subscribe(account => {
@@ -85,24 +81,16 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
     this.applyDefaultDept(deptCode);
   }
 
-  /**
-   * 应用默认科室（支持逗号分隔多科室，取第一个）
-   */
   private applyDefaultDept(deptCodeStr: string): void {
-    // 按逗号分隔，取第一个
     const firstCode = deptCodeStr.split(',')[0].trim();
-
-    // 检查是否在科室列表中
     const found = this.departments.find(d => d.code === firstCode);
 
     if (found) {
       this.selectedDeptCode = firstCode;
     } else if (this.departments.length > 0) {
-      // 回退到列表第一项
       this.selectedDeptCode = this.departments[0].code;
     }
 
-    // 加载评分项和配置
     if (this.selectedDeptCode) {
       this.loadScoreItems(this.selectedDeptCode);
       this.loadConfig(this.selectedDeptCode);
@@ -127,9 +115,33 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
   loadConfig(deptCode: string): void {
     this.loading = true;
     this.http.get<{code:number;data:ReminderConfig}>(`/api/reminder/config?deptCode=${deptCode}`).subscribe({
-      next: r => { if (r.code === 200) { this.config = r.data; if (!this.config.items) this.config.items = []; } this.loading = false; },
+      next: r => {
+        if (r.code === 200) {
+          this.config = r.data;
+          if (!this.config.items) this.config.items = [];
+          // 确保所有项都有新结构
+          this.config.items = this.config.items.map(i => this.normalizeItem(i));
+        }
+        this.loading = false;
+      },
       error: e => { console.error('加载配置失败:', e); this.loading = false; }
     });
+  }
+
+  /**
+   * 标准化配置项结构（兼容旧数据）
+   */
+  private normalizeItem(item: any): ReminderItem {
+    return {
+      scoreType: item.scoreType || '',
+      scoreName: item.scoreName || '',
+      group: item.group || 'doctor',
+      enabled: item.enabled || false,
+      level: item.level || 'mid',
+      admissionRule: item.admissionRule || { enabled: false, value: 24, unit: 'hour' },
+      intervalRule: item.intervalRule || { enabled: false, value: 7, unit: 'day' },
+      rangeRule: item.rangeRule || { enabled: false, rules: [] }
+    };
   }
 
   selectScoreType(scoreType: string): void {
@@ -139,7 +151,10 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
       if (si) this.config.items.push({
         scoreType, scoreName: si.scoreName,
         group: this.doctorScoreList.includes(si) ? 'doctor' : 'nurse',
-        enabled: false, level: 'mid', admissionNoScoreHours: 24, intervalDays: 7, rangeRules: []
+        enabled: false, level: 'mid',
+        admissionRule: { enabled: false, value: 24, unit: 'hour' },
+        intervalRule: { enabled: false, value: 7, unit: 'day' },
+        rangeRule: { enabled: false, rules: [] }
       });
     }
   }
@@ -149,8 +164,19 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
     return this.config.items.find(i => i.scoreType === this.selectedScoreType) || null;
   }
 
-  addRangeRule(): void { const i = this.getSelectedItem(); if (i) i.rangeRules.push({min:0,max:100,intervalDays:1}); }
-  removeRangeRule(idx: number): void { const i = this.getSelectedItem(); if (i) i.rangeRules.splice(idx,1); }
+  addRangeRuleItem(): void {
+    const item = this.getSelectedItem();
+    if (item) {
+      item.rangeRule.rules.push({ min: 0, max: 100, value: 7, unit: 'day' });
+    }
+  }
+
+  removeRangeRuleItem(idx: number): void {
+    const item = this.getSelectedItem();
+    if (item) {
+      item.rangeRule.rules.splice(idx, 1);
+    }
+  }
 
   saveConfig(): void {
     if (!this.selectedDeptCode || !this.config) return;
@@ -184,4 +210,13 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
   }
 
   getDeptDisplayName(d: Department): string { return `${d.name}(${d.shortName})`; }
+
+  /**
+   * 检查评分项是否已启用
+   */
+  isItemEnabled(scoreType: string): boolean {
+    if (!this.config || !this.config.items) return false;
+    const item = this.config.items.find(i => i.scoreType === scoreType);
+    return item ? item.enabled : false;
+  }
 }

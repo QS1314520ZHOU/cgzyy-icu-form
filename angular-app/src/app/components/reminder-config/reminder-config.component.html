@@ -32,32 +32,106 @@
     <div class="score-list">
       <h3>评分选择</h3>
       <div class="score-group"><h4>医生评分</h4>
-        <div *ngFor="let s of doctorScoreList" class="score-item" [class.selected]="selectedScoreType===s.scoreType" (click)="selectScoreType(s.scoreType)">{{ s.scoreName }}</div>
+        <div *ngFor="let s of doctorScoreList" class="score-item" [class.selected]="selectedScoreType===s.scoreType" (click)="selectScoreType(s.scoreType)">
+          {{ s.scoreName }}
+          <span *ngIf="isItemEnabled(s.scoreType)" class="badge-on">已启用</span>
+        </div>
       </div>
       <div class="score-group"><h4>护理评分</h4>
-        <div *ngFor="let s of nurseScoreList" class="score-item" [class.selected]="selectedScoreType===s.scoreType" (click)="selectScoreType(s.scoreType)">{{ s.scoreName }}</div>
+        <div *ngFor="let s of nurseScoreList" class="score-item" [class.selected]="selectedScoreType===s.scoreType" (click)="selectScoreType(s.scoreType)">
+          {{ s.scoreName }}
+          <span *ngIf="isItemEnabled(s.scoreType)" class="badge-on">已启用</span>
+        </div>
       </div>
     </div>
 
     <!-- 右侧配置 -->
     <div class="config-area">
       <div *ngIf="!selectedScoreType" class="placeholder-small"><p>请选择评分项</p></div>
+
       <div *ngIf="selectedScoreType && getSelectedItem() as item" class="config-form">
         <h3>{{ item.scoreName }} 配置</h3>
-        <div class="form-group"><label><input type="checkbox" [(ngModel)]="item.enabled"> 启用</label></div>
-        <div class="form-group"><label>提醒等级</label>
-          <select [(ngModel)]="item.level" class="form-control"><option value="low">低级</option><option value="mid">中级</option><option value="high">高级</option></select>
-        </div>
-        <div class="form-group"><label>入科多少小时未评分即弹框</label><input type="number" [(ngModel)]="item.admissionNoScoreHours" class="form-control" min="1"></div>
-        <div class="form-group"><label>评分间隔（天）</label><input type="number" [(ngModel)]="item.intervalDays" class="form-control" min="1"></div>
-        <div class="form-group"><label>分值范围规则</label>
-          <div *ngFor="let r of item.rangeRules; let i=index" class="range-rule">
-            <input type="number" [(ngModel)]="r.min" class="form-control-sm"> <span>~</span>
-            <input type="number" [(ngModel)]="r.max" class="form-control-sm"> <span>间隔</span>
-            <input type="number" [(ngModel)]="r.intervalDays" class="form-control-sm"> <span>天</span>
-            <button class="btn btn-danger btn-sm" (click)="removeRangeRule(i)">删除</button>
+
+        <!-- 总开关 + 提醒等级 -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="toggle-label">
+              <input type="checkbox" [(ngModel)]="item.enabled">
+              <span>启用此项提醒</span>
+            </label>
           </div>
-          <button class="btn btn-secondary btn-sm" (click)="addRangeRule()">添加规则</button>
+          <div class="form-group">
+            <label>提醒等级</label>
+            <select [(ngModel)]="item.level" class="form-control" [disabled]="!item.enabled">
+              <option value="low">低级</option>
+              <option value="mid">中级</option>
+              <option value="high">高级</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- A: 入科未评分 -->
+        <div class="rule-block" [class.disabled]="!item.enabled || !item.admissionRule.enabled">
+          <div class="rule-header">
+            <label class="toggle-label">
+              <input type="checkbox" [(ngModel)]="item.admissionRule.enabled" [disabled]="!item.enabled">
+              <span>A. 入科未评分即弹框</span>
+            </label>
+          </div>
+          <div class="rule-body">
+            <span>入科</span>
+            <input type="number" [(ngModel)]="item.admissionRule.value" class="form-control-sm" min="1" [disabled]="!item.enabled || !item.admissionRule.enabled">
+            <select [(ngModel)]="item.admissionRule.unit" class="form-control-sm" [disabled]="!item.enabled || !item.admissionRule.enabled">
+              <option value="hour">小时</option>
+              <option value="day">天</option>
+            </select>
+            <span>未评分即提醒</span>
+          </div>
+        </div>
+
+        <!-- B: 固定间隔 -->
+        <div class="rule-block" [class.disabled]="!item.enabled || !item.intervalRule.enabled">
+          <div class="rule-header">
+            <label class="toggle-label">
+              <input type="checkbox" [(ngModel)]="item.intervalRule.enabled" [disabled]="!item.enabled">
+              <span>B. 距上次评分固定间隔</span>
+            </label>
+          </div>
+          <div class="rule-body">
+            <span>距上次评分</span>
+            <input type="number" [(ngModel)]="item.intervalRule.value" class="form-control-sm" min="1" [disabled]="!item.enabled || !item.intervalRule.enabled">
+            <select [(ngModel)]="item.intervalRule.unit" class="form-control-sm" [disabled]="!item.enabled || !item.intervalRule.enabled">
+              <option value="hour">小时</option>
+              <option value="day">天</option>
+            </select>
+            <span>未评分即提醒</span>
+          </div>
+        </div>
+
+        <!-- C: 分值区间间隔 -->
+        <div class="rule-block" [class.disabled]="!item.enabled || !item.rangeRule.enabled">
+          <div class="rule-header">
+            <label class="toggle-label">
+              <input type="checkbox" [(ngModel)]="item.rangeRule.enabled" [disabled]="!item.enabled">
+              <span>C. 分值区间间隔复评</span>
+            </label>
+          </div>
+          <div class="rule-body">
+            <div *ngFor="let r of item.rangeRule.rules; let i = index" class="range-rule-row">
+              <span>分值</span>
+              <input type="number" [(ngModel)]="r.min" class="form-control-sm" [disabled]="!item.enabled || !item.rangeRule.enabled">
+              <span>~</span>
+              <input type="number" [(ngModel)]="r.max" class="form-control-sm" [disabled]="!item.enabled || !item.rangeRule.enabled">
+              <span>间隔</span>
+              <input type="number" [(ngModel)]="r.value" class="form-control-sm" min="1" [disabled]="!item.enabled || !item.rangeRule.enabled">
+              <select [(ngModel)]="r.unit" class="form-control-sm" [disabled]="!item.enabled || !item.rangeRule.enabled">
+                <option value="hour">小时</option>
+                <option value="day">天</option>
+              </select>
+              <button class="btn btn-danger btn-sm" (click)="removeRangeRuleItem(i)" [disabled]="!item.enabled || !item.rangeRule.enabled">删除</button>
+            </div>
+            <button class="btn btn-secondary btn-sm" (click)="addRangeRuleItem()" [disabled]="!item.enabled || !item.rangeRule.enabled">添加规则</button>
+          </div>
         </div>
       </div>
     </div>

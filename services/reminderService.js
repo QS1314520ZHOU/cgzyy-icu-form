@@ -346,49 +346,74 @@ class ReminderService {
   }
 
   /**
-   * 判定是否到期
+   * 时间单位转毫秒
+   */
+  toMs(value, unit) {
+    if (unit === 'hour') return value * 3600 * 1000;
+    if (unit === 'day') return value * 24 * 3600 * 1000;
+    return value * 3600 * 1000; // 默认小时
+  }
+
+  /**
+   * 判定是否到期（三种规则并行 OR 判定）
+   *
+   * A: admissionRule - 入科未评分
+   * B: intervalRule - 距上次评分固定间隔
+   * C: rangeRule - 分值区间间隔
+   *
+   * 三者相互独立，任一命中即 expired=true
    */
   checkExpired(params) {
     const { lastScore, item, icuAdmissionTime, now } = params;
+    const reasons = [];
 
-    // 无评分记录
-    if (!lastScore) {
-      // icuAdmissionTime 是毫秒时间戳
+    // A: 入科未评分（仅在无评分记录时生效）
+    if (item.admissionRule && item.admissionRule.enabled && !lastScore && icuAdmissionTime) {
       const admissionTime = new Date(icuAdmissionTime);
-      const hoursSinceAdmission = (now.getTime() - admissionTime.getTime()) / (1000 * 60 * 60);
+      const elapsed = now.getTime() - admissionTime.getTime();
+      const threshold = this.toMs(item.admissionRule.value, item.admissionRule.unit);
 
-      if (hoursSinceAdmission >= item.admissionNoScoreHours) {
-        return {
-          expired: true,
-          reason: `入科超过 ${item.admissionNoScoreHours} 小时未评分`
-        };
+      if (elapsed >= threshold) {
+        const unitText = item.admissionRule.unit === 'day' ? '天' : '小时';
+        reasons.push(`入科超过 ${item.admissionRule.value} ${unitText}未评分`);
       }
-
-      return { expired: false };
     }
 
-    // 有评分记录
-    const lastScoreTime = new Date(lastScore.time);
-    const hoursSinceLastScore = (now.getTime() - lastScoreTime.getTime()) / (1000 * 60 * 60);
+    // B: 固定间隔（有评分记录时生效）
+    if (item.intervalRule && item.intervalRule.enabled && lastScore) {
+      const lastScoreTime = new Date(lastScore.time);
+      const elapsed = now.getTime() - lastScoreTime.getTime();
+      const threshold = this.toMs(item.intervalRule.value, item.intervalRule.unit);
 
-    // 检查是否命中 rangeRules
-    let intervalDays = item.intervalDays;
-    if (item.rangeRules && item.rangeRules.length > 0) {
-      for (const rangeRule of item.rangeRules) {
-        if (lastScore.total >= rangeRule.min && lastScore.total <= rangeRule.max) {
-          intervalDays = rangeRule.intervalDays;
-          break;
+      if (elapsed >= threshold) {
+        const unitText = item.intervalRule.unit === 'day' ? '天' : '小时';
+        reasons.push(`距上次评分超过 ${item.intervalRule.value} ${unitText}`);
+      }
+    }
+
+    // C: 分值区间间隔（有评分记录且命中区间时生效）
+    if (item.rangeRule && item.rangeRule.enabled && lastScore && item.rangeRule.rules) {
+      for (const rule of item.rangeRule.rules) {
+        if (lastScore.total >= rule.min && lastScore.total <= rule.max) {
+          const lastScoreTime = new Date(lastScore.time);
+          const elapsed = now.getTime() - lastScoreTime.getTime();
+          const threshold = this.toMs(rule.value, rule.unit);
+
+          if (elapsed >= threshold) {
+            const unitText = rule.unit === 'day' ? '天' : '小时';
+            reasons.push(`分值 ${lastScore.total} 命中区间 [${rule.min}-${rule.max}]，超过 ${rule.value} ${unitText}未复评`);
+          }
+          break; // 只命中第一个区间
         }
       }
     }
 
-    const intervalHours = intervalDays * 24;
-
-    if (hoursSinceLastScore >= intervalHours) {
+    // 任一命中即 expired
+    if (reasons.length > 0) {
       return {
         expired: true,
-        reason: `超过 ${intervalDays} 天未评分`,
-        lastScoreTime: lastScore.time
+        reason: reasons.join('；'),
+        lastScoreTime: lastScore ? lastScore.time : null
       };
     }
 
