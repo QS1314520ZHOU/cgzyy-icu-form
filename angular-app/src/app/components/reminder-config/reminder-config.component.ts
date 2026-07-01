@@ -5,7 +5,7 @@ import { ReminderEngineService, Account } from '../../services/reminder-engine.s
 
 interface Department { code: string; name: string; shortName: string; }
 interface ScoreItem { realName: string; scoreName: string; scoreType: string; configurable: boolean; }
-interface RangeRuleItem { min: number; max: number; value: number; unit: 'hour'|'day'; }
+interface RangeRuleItem { min: number|null; max: number|null; value: number; unit: 'hour'|'day'; }
 interface RuleConfig { enabled: boolean; value: number; unit: 'hour'|'day'; }
 interface RangeRuleConfig { enabled: boolean; rules: RangeRuleItem[]; }
 interface ReminderItem {
@@ -16,6 +16,12 @@ interface ReminderItem {
   rangeRule: RangeRuleConfig;
 }
 interface ReminderConfig { deptCode: string; ackSnoozeMinutes: number; items: ReminderItem[]; updatedBy: string; updatedAt: string; }
+
+// ★ 默认规则结构（深拷贝用）
+const DEFAULT_ADMISSION_RULE = (): RuleConfig => ({ enabled: false, value: 24, unit: 'hour' });
+const DEFAULT_INTERVAL_RULE = (): RuleConfig => ({ enabled: false, value: 7, unit: 'day' });
+const DEFAULT_RANGE_RULE = (): RangeRuleConfig => ({ enabled: false, rules: [] });
+const DEFAULT_RANGE_RULE_ITEM = (): RangeRuleItem => ({ min: null, max: null, value: 1, unit: 'day' });
 
 @Component({
   selector: 'app-reminder-config',
@@ -119,7 +125,7 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
         if (r.code === 200) {
           this.config = r.data;
           if (!this.config.items) this.config.items = [];
-          // 确保所有项都有新结构
+          // ★ 确保所有项都有完整的规则结构（深拷贝默认值）
           this.config.items = this.config.items.map(i => this.normalizeItem(i));
         }
         this.loading = false;
@@ -129,7 +135,7 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * 标准化配置项结构（兼容旧数据）
+   * 标准化配置项结构（兼容旧数据，深拷贝默认值避免共享引用）
    */
   private normalizeItem(item: any): ReminderItem {
     return {
@@ -138,36 +144,57 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
       group: item.group || 'doctor',
       enabled: item.enabled || false,
       level: item.level || 'mid',
-      admissionRule: item.admissionRule || { enabled: false, value: 24, unit: 'hour' },
-      intervalRule: item.intervalRule || { enabled: false, value: 7, unit: 'day' },
-      rangeRule: item.rangeRule || { enabled: false, rules: [] }
+      // ★ 已有保存值则保留，缺字段才补默认（深拷贝）
+      admissionRule: item.admissionRule
+        ? { ...DEFAULT_ADMISSION_RULE(), ...item.admissionRule }
+        : DEFAULT_ADMISSION_RULE(),
+      intervalRule: item.intervalRule
+        ? { ...DEFAULT_INTERVAL_RULE(), ...item.intervalRule }
+        : DEFAULT_INTERVAL_RULE(),
+      rangeRule: item.rangeRule
+        ? { enabled: item.rangeRule.enabled || false, rules: (item.rangeRule.rules || []).map((r: any) => ({ ...DEFAULT_RANGE_RULE_ITEM(), ...r })) }
+        : DEFAULT_RANGE_RULE()
     };
   }
 
+  /**
+   * 选择评分项（确保规则结构完整）
+   */
   selectScoreType(scoreType: string): void {
     this.selectedScoreType = scoreType;
     if (this.config && !this.config.items.find(i => i.scoreType === scoreType)) {
       const si = [...this.doctorScoreList, ...this.nurseScoreList].find(s => s.scoreType === scoreType);
-      if (si) this.config.items.push({
-        scoreType, scoreName: si.scoreName,
-        group: this.doctorScoreList.includes(si) ? 'doctor' : 'nurse',
-        enabled: false, level: 'mid',
-        admissionRule: { enabled: false, value: 24, unit: 'hour' },
-        intervalRule: { enabled: false, value: 7, unit: 'day' },
-        rangeRule: { enabled: false, rules: [] }
-      });
+      if (si) {
+        // ★ 新建项时深拷贝默认值
+        this.config.items.push({
+          scoreType, scoreName: si.scoreName,
+          group: this.doctorScoreList.includes(si) ? 'doctor' : 'nurse',
+          enabled: false, level: 'mid',
+          admissionRule: DEFAULT_ADMISSION_RULE(),
+          intervalRule: DEFAULT_INTERVAL_RULE(),
+          rangeRule: DEFAULT_RANGE_RULE()
+        });
+      }
     }
   }
 
   getSelectedItem(): ReminderItem|null {
     if (!this.config || !this.selectedScoreType) return null;
-    return this.config.items.find(i => i.scoreType === this.selectedScoreType) || null;
+    const item = this.config.items.find(i => i.scoreType === this.selectedScoreType) || null;
+    // ★ 双重保险：如果找到但规则未初始化，补齐
+    if (item && !item.admissionRule) item.admissionRule = DEFAULT_ADMISSION_RULE();
+    if (item && !item.intervalRule) item.intervalRule = DEFAULT_INTERVAL_RULE();
+    if (item && !item.rangeRule) item.rangeRule = DEFAULT_RANGE_RULE();
+    return item;
   }
 
+  /**
+   * 添加分值区间规则（深拷贝默认值）
+   */
   addRangeRuleItem(): void {
     const item = this.getSelectedItem();
     if (item) {
-      item.rangeRule.rules.push({ min: 0, max: 100, value: 7, unit: 'day' });
+      item.rangeRule.rules.push(DEFAULT_RANGE_RULE_ITEM());
     }
   }
 
@@ -181,8 +208,22 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
   saveConfig(): void {
     if (!this.selectedDeptCode || !this.config) return;
     this.saving = true;
+    // ★ 保存时确保每个 item 完整包含所有字段
+    const configToSave = {
+      ...this.config,
+      items: this.config.items.map(item => ({
+        scoreType: item.scoreType,
+        scoreName: item.scoreName,
+        group: item.group,
+        enabled: item.enabled,
+        level: item.level,
+        admissionRule: item.admissionRule || DEFAULT_ADMISSION_RULE(),
+        intervalRule: item.intervalRule || DEFAULT_INTERVAL_RULE(),
+        rangeRule: item.rangeRule || DEFAULT_RANGE_RULE()
+      }))
+    };
     this.http.put<{code:number;msg:string}>('/api/reminder/config', {
-      deptCode: this.selectedDeptCode, config: this.config, updatedBy: this.account?.id||'unknown'
+      deptCode: this.selectedDeptCode, config: configToSave, updatedBy: this.account?.id||'unknown'
     }).subscribe({
       next: r => { alert(r.code===200?'配置已保存':'保存失败: '+r.msg); this.saving=false; },
       error: e => { console.error('保存失败:',e); alert('保存失败'); this.saving=false; }
@@ -211,9 +252,6 @@ export class ReminderConfigComponent implements OnInit, OnDestroy {
 
   getDeptDisplayName(d: Department): string { return `${d.name}(${d.shortName})`; }
 
-  /**
-   * 检查评分项是否已启用
-   */
   isItemEnabled(scoreType: string): boolean {
     if (!this.config || !this.config.items) return false;
     const item = this.config.items.find(i => i.scoreType === scoreType);
