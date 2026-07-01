@@ -1,27 +1,21 @@
 <div class="popup-container">
   <div class="popup-header">
     <h2>评分提醒</h2>
-    <button class="btn-close" (click)="close()">&times;</button>
   </div>
 
   <div class="popup-body">
-    <!-- 未初始化提示 -->
-    <div *ngIf="!initialized" class="placeholder-message">
-      <p>等待初始化...</p>
-    </div>
-
     <!-- 加载中 -->
-    <div *ngIf="loading" class="loading-message">
+    <div *ngIf="loading" class="placeholder">
       <p>加载中...</p>
     </div>
 
     <!-- 无待提醒 -->
-    <div *ngIf="initialized && !loading && pendingList.length === 0" class="empty-message">
+    <div *ngIf="!loading && pendingList.length === 0" class="placeholder">
       <p>暂无待评分提醒</p>
     </div>
 
     <!-- 按患者分组显示 -->
-    <div *ngIf="initialized && !loading && pendingList.length > 0" class="patient-groups">
+    <div *ngIf="!loading && pendingList.length > 0" class="patient-groups">
       <div *ngFor="let patientId of getPatientIds()" class="patient-group">
         <!-- 患者信息 -->
         <div class="patient-info">
@@ -51,10 +45,10 @@
             </div>
 
             <div class="score-actions">
-              <button class="btn btn-primary" (click)="goToScore(item.patientId, item.scoreType)">
+              <button class="btn btn-primary btn-sm" (click)="goToScore(item.patientId, item.scoreType)">
                 去评分
               </button>
-              <button class="btn btn-secondary" (click)="ack(item.patientId, item.scoreType)">
+              <button class="btn btn-secondary btn-sm" (click)="ack(item.patientId, item.scoreType)">
                 已知晓
               </button>
             </div>
