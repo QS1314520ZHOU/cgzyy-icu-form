@@ -90,31 +90,39 @@ export class ReminderOverlayComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * 去评分：跳转到宿主评分页面
+   * 去评分：跳转到宿主评分页面（hash 路由）
    *
-   * ★ 利用用户点击的用户激活，允许非 sandbox iframe 跨域顶层导航
-   * 被 sandbox 拦截时用 postMessage 兜底
+   * ★ 宿主用 hash 路由：http://<host>:60000/#/main/doctor/other/doctor-score
+   * ★ 同源时直接改顶层 hash（不刷新）；跨域时用动态 origin 拼完整 URL
    */
   goToScore(patientId: string, scoreType: string): void {
-    const base = this.reminderEngine.getHostOrigin();
-    // 宿主评分路由（path 模式）
-    const url = `${base}/main/doctor/other/doctor-score`;
+    const route = '#/main/doctor/other/doctor-score';
 
     try {
-      // 尝试跳转顶层窗口
-      if (window.top) {
-        window.top.location.href = url;
+      // 同源时直接改顶层 hash（不刷新页面）
+      if (window.top && window.top.location.origin === location.origin) {
+        window.top.location.hash = route;
         return;
       }
     } catch (e) {
-      // 被 sandbox 或跨域拦截，走 postMessage 兜底
-      console.warn('[ReminderOverlay] 顶层跳转被拦截，走 postMessage 兜底');
+      // 同源检测失败，继续跨域处理
+    }
+
+    // 跨域：用动态宿主 origin 拼带 #/ 的完整 URL
+    const base = this.reminderEngine.getHostOrigin();
+    if (base && window.top) {
+      try {
+        window.top.location.href = `${base}/${route}`;
+        return;
+      } catch (e) {
+        console.warn('[ReminderOverlay] 顶层跳转被拦截，走 postMessage 兜底');
+      }
     }
 
     // 兜底：postMessage 通知宿主
     window.parent.postMessage({
       type: 'GOTO_SCORE',
-      payload: { patientId, scoreType, url }
+      payload: { patientId, scoreType, route }
     }, '*');
   }
 

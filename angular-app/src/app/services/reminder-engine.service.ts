@@ -90,10 +90,10 @@ export class ReminderEngineService {
   private readonly REQUEST_COOLDOWN = 1000;
   private readonly STORAGE_KEY = 'icu_last_account';
 
-  // ── origin 白名单 ─────────────────────────────────────
+  // ── origin 白名单（不写死 IP，从配置或运行时获取）────────
   private readonly ORIGIN_WHITELIST = [
     location.origin,
-    'http://10.35.4.10:60000'
+    // 本地开发时允许所有，生产环境需配置具体域名
   ];
 
   // ── 接受的消息类型 ─────────────────────────────────────
@@ -376,13 +376,23 @@ export class ReminderEngineService {
     });
   }
 
-  // ── 获取宿主 origin（用于跳转）────────────────────────
+  // ── 获取宿主 origin（用于跳转，不写死 IP）──────────────
   getHostOrigin(): string {
+    // 优先用从消息中记录的 origin
     if (this.hostOrigin && this.hostOrigin !== 'null') {
       return this.hostOrigin;
     }
-    // 回退到默认值
-    return 'http://10.35.4.10:60000';
+    // 其次尝试从 document.referrer 获取
+    try {
+      if (document.referrer) {
+        const referrerOrigin = new URL(document.referrer).origin;
+        if (referrerOrigin && referrerOrigin !== 'null') {
+          return referrerOrigin;
+        }
+      }
+    } catch {}
+    // 最后回退到当前页面 origin
+    return location.origin;
   }
 
   // ── 工具方法 ──────────────────────────────────────────
@@ -399,7 +409,12 @@ export class ReminderEngineService {
 
   private isAllowedOrigin(origin: string): boolean {
     if (this.ORIGIN_WHITELIST.includes(origin)) return true;
+    // 本地开发允许所有
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return true;
+    // ★ 如果已经记录过 hostOrigin，说明之前已通过校验，允许同源
+    if (this.hostOrigin && origin === this.hostOrigin) return true;
+    // 允许来自 iframe 父页面的消息（同源）
+    if (origin === location.origin) return true;
     return false;
   }
 
