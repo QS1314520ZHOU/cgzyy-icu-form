@@ -1,7 +1,7 @@
 {
   "name": "icu-stats",
   "version": "1.0.0",
-  "description": "ICU重症医学科指标统计系统",
+  "description": "ICU重症医学科辅助功能系统",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
