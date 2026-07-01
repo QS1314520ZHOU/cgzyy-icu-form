@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClientModule } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 
+import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
 import { PatientInfoComponent } from './components/patient-info/patient-info.component';
 import { AccountInfoComponent } from './components/account-info/account-info.component';
@@ -33,7 +34,8 @@ import { ScoreReminderService } from './services/score-reminder.service';
     BrowserModule,
     CommonModule,
     HttpClientModule,
-    FormsModule
+    FormsModule,
+    AppRoutingModule
   ],
   providers: [
     MessageService,
