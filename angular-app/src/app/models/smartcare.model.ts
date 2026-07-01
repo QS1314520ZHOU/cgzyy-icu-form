@@ -64,3 +64,6 @@ export interface ConnectionState {
   type: 'waiting' | 'received' | 'cached' | 'error';
   text: string;
 }
+
+// 兼容旧代码的类型别名
+export type ConnectionStatus = 'waiting' | 'from-cache' | 'connected' | 'origin-rejected';

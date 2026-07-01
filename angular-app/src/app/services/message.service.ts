@@ -1,62 +1,59 @@
 import { Injectable, NgZone } from '@angular/core';
-import { BehaviorSubject } from 'rxjs';
-import { SmartCareData, Patient, ConnectionState } from '../models/smartcare.model';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { map, distinctUntilChanged } from 'rxjs/operators';
+import { SmartCareData, Patient, Account } from '../models/smartcare.model';
 import { StorageService } from './storage.service';
 import { LogService } from './log.service';
 
 /**
- * SmartCare postMessage 通信服务
+ * 连接状态枚举
+ */
+export type ConnectionStatus = 'waiting' | 'from-cache' | 'connected' | 'origin-rejected';
+
+/**
+ * SmartCare postMessage 通信服务（根级单例）
  *
- * 核心职责：
- * 1. 监听 window message 事件（常驻，应用级）
- * 2. READY 握手协议：子页发送 READY，收到 INIT 后初始化
- * 3. 主动向宿主请求数据（requestData）
- * 4. 注册生命周期事件（visibilitychange/focus/pageshow）
- * 5. 患者切换检测（patientKey = id || mrn || hisPid）
- * 6. NgZone.run 内更新状态，触发变更检测
- * 7. 轮询机制：定期向宿主请求数据，覆盖"刷新后宿主不响应"场景
+ * ★ 关键设计：在构造函数中立即注册监听器，确保在任何组件渲染前就已挂上
+ * 这样能接住宿主"渲染后那一次带数据的 onload 广播"
  */
 @Injectable({
   providedIn: 'root'
 })
 export class MessageService {
-  // ── 数据流 ──────────────────────────────────────────────
-  private dataSubject = new BehaviorSubject<SmartCareData | null>(null);
-  data$ = this.dataSubject.asObservable();
+  // ── 数据流（暴露给组件订阅）────────────────────────────
+  private patientSubject = new BehaviorSubject<Patient | null>(null);
+  /** 当前患者数据 */
+  patient$: Observable<Patient | null> = this.patientSubject.asObservable();
 
-  private stateSubject = new BehaviorSubject<ConnectionState>({
-    type: 'waiting',
-    text: '等待外层数据'
-  });
-  state$ = this.stateSubject.asObservable();
+  private accountSubject = new BehaviorSubject<Account | null>(null);
+  /** 当前账号数据 */
+  account$: Observable<Account | null> = this.accountSubject.asObservable();
 
-  // ── 状态 ──────────────────────────────────────────────
+  private tokenSubject = new BehaviorSubject<string | null>(null);
+  /** 当前 token */
+  token$: Observable<string | null> = this.tokenSubject.asObservable();
+
+  private statusSubject = new BehaviorSubject<ConnectionStatus>('waiting');
+  /** 连接状态 */
+  status$: Observable<ConnectionStatus> = this.statusSubject.asObservable();
+
+  /** 患者唯一键（用于去重和切换检测） */
+  patientKey$: Observable<string> = this.patient$.pipe(
+    map(p => this.getPatientKey(p)),
+    distinctUntilChanged()
+  );
+
+  // ── 内部状态 ──────────────────────────────────────────
   private currentPatientKey = '';
   private isPlaceholder = false;
-  private initialized = false;
   private lastRequestTime = 0;
   private lastResponseTime = 0;
   private pollTimer: any = null;
 
-  // ── READY 握手状态 ─────────────────────────────────────
-  private readyTimer: any = null;
-  private readyCount = 0;
-  private readonly READY_INTERVAL = 300;  // READY 重发间隔（毫秒）
-  private readonly READY_MAX = 10;        // 最大重发次数
-  private initReceived = false;           // 是否收到 INIT
-
   // ── 配置 ──────────────────────────────────────────────
   private readonly POLL_INTERVAL = 3000;  // 轮询间隔（毫秒）
   private readonly REQUEST_COOLDOWN = 1000;  // 请求冷却时间（毫秒）
-
-  // ── channel 配置 ─────────────────────────────────────
-  private readonly CHANNEL = 'smartcare.scoreReminder.v1';
-
-  // ── targetOrigin 配置（按通道分离）────────────────────
-  // ★ 向上 → SmartCare 宿主
-  private readonly HOST_ORIGIN = 'http://10.35.4.10:60000';
-  // ★ 向下 → 内层 print iframe（同源）
-  private readonly IFRAME_ORIGIN = location.origin;
+  private readonly STORAGE_KEY = 'icu_last_patient';
 
   // ── origin 白名单 ─────────────────────────────────────
   private readonly ORIGIN_WHITELIST = [
@@ -64,240 +61,240 @@ export class MessageService {
     'http://10.35.4.10:60000'  // SmartCare 生产环境
   ];
 
+  // ── 接受的消息类型 ─────────────────────────────────────
+  private readonly ACCEPTED_TYPES = [
+    'SmartCare',
+    'HOST_DATA',
+    'PRINT_DATA',
+    'RESPONSE_DATA',
+  ];
+
   constructor(
     private storageService: StorageService,
     private logService: LogService,
     private ngZone: NgZone
-  ) {}
-
-  // ── 初始化（应用启动时调用一次）────────────────────────
-  init(): void {
-    if (this.initialized) {
-      this.logService.add('[初始化] 已初始化，跳过', 'info');
-      return;
-    }
-    this.initialized = true;
-
-    this.logService.add('[初始化] 页面加载', 'info');
-
-    // 1. 恢复缓存
-    this.restoreFromStorage();
-
-    // 2. 注册消息监听（必须在发送 READY 之前）
+  ) {
+    // ★ 关键：在构造函数中立即注册监听器，不依赖任何组件的 ngOnInit
     this.registerMessageListener();
-
-    // 3. 注册生命周期事件
     this.registerLifecycleEvents();
 
-    // 4. 发送 READY（启动重发机制）
-    this.startReadyLoop();
+    // 从 sessionStorage 恢复上次数据作为占位
+    this.restoreFromStorage();
 
-    // 5. 启动轮询（收到 INIT 后才真正工作）
-    this.startPolling();
-  }
-
-  // ── READY 握手协议 ─────────────────────────────────────
-
-  /**
-   * 启动 READY 重发循环
-   * 每 300ms 重发一次，最多 10 次，收到 INIT 后停止
-   */
-  private startReadyLoop(): void {
-    this.readyCount = 0;
-    this.initReceived = false;
+    // 立即向宿主握手
     this.sendReady();
+    this.requestData('init');
 
-    this.readyTimer = setInterval(() => {
-      if (this.initReceived) {
-        this.stopReadyLoop();
-        return;
-      }
+    // 启动轮询兜底
+    this.startPolling();
 
-      if (this.readyCount >= this.READY_MAX) {
-        this.stopReadyLoop();
-        this.logService.add('[READY] 已达最大重发次数，停止重发', 'warning');
-        return;
-      }
-
-      this.sendReady();
-    }, this.READY_INTERVAL);
+    this.logService.add('[MessageService] 根级单例已初始化，监听器已注册', 'success');
   }
 
-  /**
-   * 停止 READY 重发循环
-   */
-  private stopReadyLoop(): void {
-    if (this.readyTimer) {
-      clearInterval(this.readyTimer);
-      this.readyTimer = null;
+  // ── 注册消息监听（常驻，在构造函数中执行）──────────────
+  private registerMessageListener(): void {
+    window.addEventListener('message', (event) => {
+      this.onMessage(event);
+    });
+    this.logService.add('[监听] window.message 已注册', 'info');
+  }
+
+  // ── 消息处理核心逻辑 ──────────────────────────────────
+  private onMessage(event: MessageEvent): void {
+    // 1. 忽略自己发出的消息
+    if (event.source === window) {
+      return;
+    }
+
+    // 2. origin 校验
+    if (!this.isAllowedOrigin(event.origin)) {
+      this.statusSubject.next('origin-rejected');
+      const warnMsg = `[安全] 来源校验失败: origin=${event.origin}，已忽略`;
+      console.warn('[MessageService] ' + warnMsg);
+      this.logService.add(warnMsg, 'error');
+      return;
+    }
+
+    try {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+
+      // 3. 类型识别：兼容三种形态
+      const normalized = this.normalizeData(data);
+      if (!normalized) return;
+
+      const { account, patient, token } = normalized;
+
+      // 4. 无病人消息处理
+      if (!patient) {
+        this.logService.add('[收到] 消息无 patient 数据，请选中病人', 'warning');
+        return;
+      }
+
+      // 5. 患者唯一键检测
+      const patientKey = this.getPatientKey(patient);
+      this.logService.add(`[收到] patientKey=${patientKey}, currentKey=${this.currentPatientKey || '(空)'}`, 'success');
+
+      // 6. 处理数据（含切换检测和去重）
+      this.processData({ account, patient, token });
+
+    } catch (error: any) {
+      this.logService.add(`[错误] 消息处理失败: ${error.message}`, 'error');
     }
   }
 
-  /**
-   * 发送 READY 消息
-   */
-  private sendReady(): void {
-    this.readyCount++;
-    this.logService.add(`[READY] 发送 READY (${this.readyCount}/${this.READY_MAX})`, 'info');
+  // ── 数据规范化（兼容三种形态）──────────────────────────
+  private normalizeData(data: any): SmartCareData | null {
+    // 形态1：event.data 直接是 {type:'SmartCare', account, patient, token}
+    if (data.type === 'SmartCare' && data.account && data.patient) {
+      return { account: data.account, patient: data.patient, token: data.token };
+    }
 
+    // 形态2：{type:'HOST_DATA'|'PRINT_DATA', payload:{...}}
+    if (this.ACCEPTED_TYPES.includes(data.type)) {
+      const p = data.payload || {};
+      if (p.account && p.patient) {
+        return { account: p.account, patient: p.patient, token: p.token };
+      }
+      if (data.account && data.patient) {
+        return { account: data.account, patient: data.patient, token: data.token };
+      }
+    }
+
+    // 形态3：兜底识别"含 account+patient 结构"的消息
+    if (data.account && data.patient) {
+      return { account: data.account, patient: data.patient, token: data.token };
+    }
+
+    return null;
+  }
+
+  // ── 处理数据（含切换检测和去重）────────────────────────
+  private processData(data: SmartCareData): void {
+    const patientKey = this.getPatientKey(data.patient);
+
+    // 唯一键变化 = 切换病人（清旧、覆盖）
+    if (patientKey && this.currentPatientKey && patientKey !== this.currentPatientKey) {
+      this.logService.add(`[切换] 患者切换: ${this.currentPatientKey} → ${patientKey}`, 'warning');
+      this.isPlaceholder = false;
+    }
+
+    // 占位缓存模式：收到任何有效数据都无条件覆盖
+    if (this.isPlaceholder) {
+      this.logService.add('[覆盖] 当前为占位缓存，无条件覆盖为最新数据', 'warning');
+      this.isPlaceholder = false;
+    }
+
+    // 内容签名去重（同一患者同内容避免闪烁）
+    const signature = this.safeStringify(data);
+    if (patientKey === this.currentPatientKey && this.isDuplicate(data)) {
+      this.logService.add('[去重] 收到重复数据，跳过渲染', 'info');
+      return;
+    }
+
+    // 更新状态
+    this.currentPatientKey = patientKey;
+    this.lastResponseTime = Date.now();
+
+    // 写入 sessionStorage
+    this.persistToStorage(data);
+
+    // 更新数据流（在 NgZone 内触发变更检测）
+    this.ngZone.run(() => {
+      this.patientSubject.next(data.patient);
+      this.accountSubject.next(data.account);
+      this.tokenSubject.next(data.token || null);
+      this.statusSubject.next('connected');
+    });
+
+    this.logService.add(`[更新] 数据已更新, patientKey=${patientKey}`, 'success');
+  }
+
+  // ── 去重检查 ──────────────────────────────────────────
+  private lastSignature = '';
+
+  private isDuplicate(data: SmartCareData): boolean {
+    const signature = this.safeStringify(data);
+    if (signature === this.lastSignature) {
+      return true;
+    }
+    this.lastSignature = signature;
+    return false;
+  }
+
+  // ── 患者唯一键 ────────────────────────────────────────
+  getPatientKey(patient: Patient | null): string {
+    if (!patient) return '';
+    return String(patient.id || patient.mrn || patient.hisPid || '');
+  }
+
+  // ── sessionStorage 持久化 ─────────────────────────────
+  private persistToStorage(data: SmartCareData): void {
     try {
-      const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
+      sessionStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
+    } catch {}
+  }
+
+  private restoreFromStorage(): void {
+    try {
+      const cached = sessionStorage.getItem(this.STORAGE_KEY);
+      if (!cached) {
+        this.logService.add('[缓存] 无缓存数据', 'info');
+        return;
+      }
+
+      const data = JSON.parse(cached);
+      const patientKey = this.getPatientKey(data.patient);
+      this.currentPatientKey = patientKey;
+      this.isPlaceholder = true;
+
+      // 在 NgZone 内更新
+      this.ngZone.run(() => {
+        this.patientSubject.next(data.patient);
+        this.accountSubject.next(data.account);
+        this.tokenSubject.next(data.token || null);
+        this.statusSubject.next('from-cache');
+      });
+
+      this.logService.add(`[缓存] 已恢复, patientKey=${patientKey}, 标记为占位`, 'warning');
+    } catch {}
+  }
+
+  // ── 发送 READY ────────────────────────────────────────
+  private sendReady(): void {
+    this.logService.add('[就绪] 发送 HOST_PAGE_READY', 'info');
+    try {
+      const target = this.getTarget();
       if (target) {
-        target.postMessage({
-          channel: this.CHANNEL,
-          type: 'READY',
-          payload: { ok: true }
-        }, this.HOST_ORIGIN);
+        target.postMessage({ type: 'HOST_PAGE_READY', payload: { ok: true } }, this.getTargetOrigin());
       }
     } catch (e: any) {
       this.logService.add(`[错误] 发送 READY 失败: ${e.message}`, 'error');
     }
   }
 
-  /**
-   * 发送 ACK 消息
-   */
-  private sendAck(): void {
-    this.logService.add('[ACK] 发送 ACK', 'info');
+  // ── 请求数据 ──────────────────────────────────────────
+  requestData(reason: string): void {
+    const now = Date.now();
 
-    try {
-      const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
-      if (target) {
-        target.postMessage({
-          channel: this.CHANNEL,
-          type: 'ACK',
-          payload: { ok: true }
-        }, this.HOST_ORIGIN);
-      }
-    } catch (e: any) {
-      this.logService.add(`[错误] 发送 ACK 失败: ${e.message}`, 'error');
-    }
-  }
-
-  // ── 注册消息监听（常驻）────────────────────────────────
-  private registerMessageListener(): void {
-    window.addEventListener('message', (event) => {
-      // ★ 忽略自己发出的消息（避免自循环）
-      if (event.source === window) {
-        return;
-      }
-
-      // ★ 校验 channel
-      if (!event.data || event.data.channel !== this.CHANNEL) {
-        // 非本 channel 消息，检查是否是旧协议消息
-        this.handleLegacyMessage(event);
-        return;
-      }
-
-      // origin 校验
-      if (!this.isAllowedOrigin(event.origin)) {
-        const warnMsg = `[安全] 来源校验失败: origin=${event.origin}，已忽略`;
-        console.warn('[MessageService] ' + warnMsg);
-        this.logService.add(warnMsg, 'error');
-        return;
-      }
-
-      try {
-        const { type, payload } = event.data;
-
-        switch (type) {
-          case 'INIT':
-            this.handleInit(payload);
-            break;
-
-          case 'PATIENT':
-            this.handlePatient(payload);
-            break;
-
-          default:
-            this.logService.add(`[收到] 未知消息类型: ${type}`, 'info');
-        }
-      } catch (error: any) {
-        this.logService.add(`[错误] 消息处理失败: ${error.message}`, 'error');
-      }
-    });
-  }
-
-  /**
-   * 处理 INIT 消息
-   */
-  private handleInit(payload: any): void {
-    this.initReceived = true;
-    this.stopReadyLoop();
-    this.logService.add('[INIT] 收到 INIT 消息', 'success');
-
-    // 回复 ACK
-    this.sendAck();
-
-    // 处理初始化数据
-    const patient = payload?.patient;
-    const account = payload?.account;
-    const token = payload?.token;
-
-    if (patient) {
-      const patientKey = this.getPatientKey(patient);
-      this.logService.add(`[INIT] patientKey=${patientKey}`, 'success');
-      this.processData({ account, patient, token });
-    } else {
-      this.logService.add('[INIT] 无 patient 数据', 'warning');
-    }
-
-    // 请求数据（兜底）
-    this.requestData('init');
-  }
-
-  /**
-   * 处理 PATIENT 消息
-   */
-  private handlePatient(payload: any): void {
-    const patient = payload?.patient || payload;
-    if (!patient) {
-      this.logService.add('[PATIENT] 无 patient 数据', 'warning');
+    // 冷却时间检查
+    if (this.lastRequestTime && (now - this.lastRequestTime < this.REQUEST_COOLDOWN)) {
       return;
     }
 
-    const patientKey = this.getPatientKey(patient);
-    this.logService.add(`[PATIENT] 收到患者更新, patientKey=${patientKey}`, 'success');
+    this.lastRequestTime = now;
+    this.logService.add(`[请求] 向外层请求数据, reason=${reason}`, 'info');
 
-    // 处理患者数据
-    this.processData({ patient });
-  }
-
-  /**
-   * 处理旧协议消息（向后兼容）
-   */
-  private handleLegacyMessage(event: MessageEvent): void {
     try {
-      const data = event.data;
-      if (!data || typeof data !== 'object') return;
-
-      // 忽略请求类消息（避免自循环）
-      if (data.type === 'REQUEST_HOST_DATA' ||
-          data.type === 'HOST_PAGE_READY' ||
-          data.type === 'PRINT_PAGE_REQUEST_DATA') {
-        return;
+      const target = this.getTarget();
+      if (target) {
+        target.postMessage({
+          type: 'REQUEST_HOST_DATA',
+          payload: { reason }
+        }, this.getTargetOrigin());
       }
-
-      // origin 校验
-      if (!this.isAllowedOrigin(event.origin)) {
-        return;
-      }
-
-      // 处理 SmartCare 消息（旧协议）
-      if (data.type === 'SmartCare') {
-        const account = data.account || (data.payload && data.payload.account);
-        const patient = data.patient || (data.payload && data.payload.patient);
-        const token = data.token || (data.payload && data.payload.token);
-
-        if (patient) {
-          const patientKey = this.getPatientKey(patient);
-          this.logService.add(`[旧协议] 收到 SmartCare 消息, patientKey=${patientKey}`, 'success');
-          this.lastResponseTime = Date.now();
-          this.processData({ account, patient, token });
-        }
-      }
-    } catch (error: any) {
-      this.logService.add(`[错误] 旧协议消息处理失败: ${error.message}`, 'error');
+    } catch (e: any) {
+      this.logService.add(`[错误] 请求失败: ${e.message}`, 'error');
     }
   }
 
@@ -326,170 +323,58 @@ export class MessageService {
 
   // ── 启动轮询 ──────────────────────────────────────────
   private startPolling(): void {
-    if (this.pollTimer) {
-      return;  // 已经在轮询
-    }
-
     this.logService.add(`[轮询] 启动，间隔 ${this.POLL_INTERVAL}ms`, 'info');
 
     this.pollTimer = setInterval(() => {
-      // 如果页面不可见，跳过本次轮询
+      // 页面不可见时跳过
       if (document.visibilityState !== 'visible') {
         return;
       }
 
-      // 如果刚收到响应，跳过本次轮询（避免频繁请求）
+      // 刚收到响应时跳过
       const now = Date.now();
       if (this.lastResponseTime && (now - this.lastResponseTime < this.POLL_INTERVAL * 2)) {
         return;
       }
 
-      // 如果刚发过请求，跳过本次轮询（避免频繁请求）
+      // 刚发过请求时跳过
       if (this.lastRequestTime && (now - this.lastRequestTime < this.REQUEST_COOLDOWN)) {
         return;
       }
 
-      this.logService.add('[轮询] 向宿主请求数据', 'info');
       this.requestData('poll');
     }, this.POLL_INTERVAL);
   }
 
-  // ── 停止轮询 ──────────────────────────────────────────
-  private stopPolling(): void {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-      this.logService.add('[轮询] 停止', 'info');
+  // ── 工具方法 ──────────────────────────────────────────
+  private getTarget(): Window | null {
+    if (window.parent !== window) return window.parent;
+    if (window.top !== window) return window.top;
+    return null;
+  }
+
+  private getTargetOrigin(): string {
+    // 本地开发用 '*'，生产环境用具体域名
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      return '*';
     }
+    return 'http://10.35.4.10:60000';
   }
 
-  // ── 请求数据（向上发给宿主）─────────────────────────────
-  requestData(reason: string): void {
-    const now = Date.now();
-
-    // 冷却时间检查（避免频繁请求）
-    if (this.lastRequestTime && (now - this.lastRequestTime < this.REQUEST_COOLDOWN)) {
-      this.logService.add(`[请求] 冷却中，跳过 reason=${reason}`, 'info');
-      return;
-    }
-
-    this.lastRequestTime = now;
-    this.logService.add(`[请求] 向外层请求数据, reason=${reason}`, 'info');
-
-    try {
-      // ★ 目标 = window.parent（若与 self 相同则用 window.top）
-      const target = window.parent !== window ? window.parent : (window.top !== window ? window.top : null);
-      if (target) {
-        // ★ 向上 → 宿主，用 HOST_ORIGIN
-        target.postMessage({
-          channel: this.CHANNEL,
-          type: 'REQUEST_HOST_DATA',
-          payload: { reason }
-        }, this.HOST_ORIGIN);
-      }
-    } catch (e: any) {
-      this.logService.add(`[错误] 请求失败: ${e.message}`, 'error');
-    }
-  }
-
-  // ── 处理数据（无条件消费）─────────────────────────────
-  private processData(data: SmartCareData): void {
-    const patientKey = this.getPatientKey(data.patient);
-
-    this.logService.add(
-      `[处理] patientKey=${patientKey}, currentKey=${this.currentPatientKey || '(空)'}, isPlaceholder=${this.isPlaceholder}`,
-      'info'
-    );
-
-    // 唯一键变化：强制刷新
-    if (patientKey && this.currentPatientKey && patientKey !== this.currentPatientKey) {
-      this.logService.add(`[切换] 患者切换: ${this.currentPatientKey} → ${patientKey}`, 'warning');
-    }
-
-    // 无条件更新状态
-    this.currentPatientKey = patientKey;
-    this.isPlaceholder = false;
-
-    // 记录响应时间
-    this.lastResponseTime = Date.now();
-
-    // 持久化
-    this.storageService.persist(data);
-
-    // ngZone.run() 内更新状态，触发变更检测
-    this.ngZone.run(() => {
-      this.dataSubject.next(data);
-      this.setState('received', '已获取数据');
-    });
-
-    // 转发给内层 iframe（如果有）
-    this.forwardToIframe(data);
-  }
-
-  // ── 转发给内层 iframe ─────────────────────────────────
-  private forwardToIframe(data: SmartCareData): void {
-    try {
-      const iframe = document.querySelector('iframe');
-      // ★ 确保 iframe 存在且不是自己（避免自循环）
-      if (iframe && iframe.contentWindow && iframe.contentWindow !== window) {
-        // ★ 向下 → 内层 print iframe，用 IFRAME_ORIGIN
-        iframe.contentWindow.postMessage({
-          type: 'PRINT_DATA',
-          payload: { type: 'SmartCare', account: data.account, patient: data.patient }
-        }, this.IFRAME_ORIGIN);
-        const patientKey = this.getPatientKey(data.patient);
-        this.logService.add(`[转发] 已转发给内层 iframe, patientKey=${patientKey}`, 'info');
-      }
-    } catch (error: any) {
-      this.logService.add(`[错误] 转发给 iframe 失败: ${error.message}`, 'error');
-    }
-  }
-
-  // ── 患者唯一键 ────────────────────────────────────────
-  getPatientKey(patient: Patient): string {
-    if (!patient) return '';
-    return String(patient.id || patient.mrn || patient.hisPid || '');
-  }
-
-  // ── 设置状态 ──────────────────────────────────────────
-  private setState(type: ConnectionState['type'], text: string): void {
-    this.stateSubject.next({ type, text });
-  }
-
-  // ── origin 校验 ────────────────────────────────────────
   private isAllowedOrigin(origin: string): boolean {
     if (this.ORIGIN_WHITELIST.includes(origin)) return true;
-    // 本地开发允许所有
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return true;
     return false;
   }
 
-  // ── 缓存恢复 ──────────────────────────────────────────
-  private restoreFromStorage(): void {
-    const cached = this.storageService.restore();
-    if (!cached) {
-      this.logService.add('[缓存] 无缓存数据', 'info');
-      return;
-    }
-
-    const patientKey = this.getPatientKey(cached.data.patient);
-    this.currentPatientKey = patientKey;
-    this.isPlaceholder = true;
-
-    this.ngZone.run(() => {
-      this.dataSubject.next(cached.data);
-      this.setState('cached', '已从缓存恢复（等待最新数据）');
-    });
-
-    this.logService.add(`[缓存] 已恢复, patientKey=${patientKey}, 标记为占位`, 'warning');
-
-    // 同步给内层
-    this.forwardToIframe(cached.data);
+  private safeStringify(value: any): string {
+    try { return JSON.stringify(value); } catch { return ''; }
   }
 
-  // ── 销毁时清理 ─────────────────────────────────────────
+  // ── 清理 ──────────────────────────────────────────────
   ngOnDestroy(): void {
-    this.stopPolling();
-    this.stopReadyLoop();
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+    }
   }
 }

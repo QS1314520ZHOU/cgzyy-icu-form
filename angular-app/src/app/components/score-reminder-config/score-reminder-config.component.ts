@@ -1,5 +1,6 @@
-import { Component, OnInit, OnDestroy, HostListener } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
+import { MessageService, ConnectionStatus } from '../../services/message.service';
 import { ScoreReminderService, ScoreReminderConfig, Department } from '../../services/score-reminder.service';
 
 @Component({
@@ -17,90 +18,60 @@ export class ScoreReminderConfigComponent implements OnInit, OnDestroy {
   loading = false;
   saving = false;
 
-  // postMessage 状态
-  initialized = false;
+  // 从 MessageService 获取的状态
+  status: ConnectionStatus = 'waiting';
   token: string | null = null;
   doctorId: string | null = null;
+  deptCode: string | null = null;
 
   private subscriptions: Subscription[] = [];
 
-  constructor(private scoreReminderService: ScoreReminderService) {}
+  constructor(
+    private messageService: MessageService,
+    private scoreReminderService: ScoreReminderService
+  ) {}
 
   ngOnInit(): void {
     // 加载科室列表
     this.loadDepartments();
 
-    // 监听 postMessage
-    this.setupPostMessageListener();
+    // ★ 订阅 MessageService 的数据流（不再自己监听 postMessage）
+    this.subscriptions.push(
+      this.messageService.status$.subscribe(status => {
+        this.status = status;
+      })
+    );
+
+    this.subscriptions.push(
+      this.messageService.token$.subscribe(token => {
+        this.token = token;
+      })
+    );
+
+    this.subscriptions.push(
+      this.messageService.account$.subscribe(account => {
+        if (account) {
+          this.doctorId = account.id || null;
+        }
+      })
+    );
+
+    this.subscriptions.push(
+      this.messageService.patient$.subscribe(patient => {
+        if (patient) {
+          this.deptCode = patient.deptCode || null;
+          // 如果有 deptCode，自动加载配置
+          if (this.deptCode && !this.selectedDeptCode) {
+            this.selectedDeptCode = this.deptCode;
+            this.loadConfig(this.deptCode);
+          }
+        }
+      })
+    );
   }
 
   ngOnDestroy(): void {
     this.subscriptions.forEach(sub => sub.unsubscribe());
-  }
-
-  /**
-   * 监听 postMessage
-   */
-  private setupPostMessageListener(): void {
-    window.addEventListener('message', (event) => {
-      // 校验 origin
-      if (!this.isAllowedOrigin(event.origin)) {
-        console.warn('[ScoreReminderConfig] 来源校验失败:', event.origin);
-        return;
-      }
-
-      // 校验 channel
-      if (event.data?.channel !== 'smartcare.scoreReminder.v1') {
-        return;
-      }
-
-      const { type, payload } = event.data;
-
-      if (type === 'INIT') {
-        this.handleInit(payload);
-      }
-    });
-  }
-
-  /**
-   * 处理 INIT 消息
-   */
-  private handleInit(payload: any): void {
-    this.token = payload?.token || null;
-    this.doctorId = payload?.doctorId || null;
-    this.initialized = true;
-
-    // 如果有 deptCode，默认选中
-    if (payload?.deptCode) {
-      this.selectedDeptCode = payload.deptCode;
-      this.loadConfig(payload.deptCode);
-    }
-
-    // 发送 READY 消息
-    this.sendReady();
-  }
-
-  /**
-   * 发送 READY 消息
-   */
-  private sendReady(): void {
-    window.parent.postMessage({
-      channel: 'smartcare.scoreReminder.v1',
-      type: 'READY',
-      payload: { ok: true }
-    }, '*');
-  }
-
-  /**
-   * 校验 origin
-   */
-  private isAllowedOrigin(origin: string): boolean {
-    // 本地开发允许所有
-    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-      return true;
-    }
-    // TODO: 添加生产环境 origin 白名单
-    return true;
   }
 
   /**
