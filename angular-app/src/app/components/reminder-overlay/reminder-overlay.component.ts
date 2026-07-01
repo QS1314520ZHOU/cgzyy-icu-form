@@ -90,12 +90,31 @@ export class ReminderOverlayComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * 去评分
+   * 去评分：跳转到宿主评分页面
+   *
+   * ★ 利用用户点击的用户激活，允许非 sandbox iframe 跨域顶层导航
+   * 被 sandbox 拦截时用 postMessage 兜底
    */
   goToScore(patientId: string, scoreType: string): void {
+    const base = this.reminderEngine.getHostOrigin();
+    // 宿主评分路由（path 模式）
+    const url = `${base}/main/doctor/other/doctor-score`;
+
+    try {
+      // 尝试跳转顶层窗口
+      if (window.top) {
+        window.top.location.href = url;
+        return;
+      }
+    } catch (e) {
+      // 被 sandbox 或跨域拦截，走 postMessage 兜底
+      console.warn('[ReminderOverlay] 顶层跳转被拦截，走 postMessage 兜底');
+    }
+
+    // 兜底：postMessage 通知宿主
     window.parent.postMessage({
       type: 'GOTO_SCORE',
-      payload: { patientId, scoreType }
+      payload: { patientId, scoreType, url }
     }, '*');
   }
 

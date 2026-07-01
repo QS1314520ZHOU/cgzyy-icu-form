@@ -83,6 +83,7 @@ export class ReminderEngineService {
   private lastResponseTime = 0;
   private pollTimer: any = null;
   private destroy$ = new Subject<void>();
+  private hostOrigin = '';  // ★ 记录宿主 origin（用于跳转）
 
   // ── 配置 ──────────────────────────────────────────────
   private readonly POLL_INTERVAL = 10 * 60 * 1000; // 10 分钟
@@ -140,6 +141,11 @@ export class ReminderEngineService {
       this.statusSubject.next('origin-rejected');
       console.warn(`[ReminderEngine] 来源校验失败: ${event.origin}`);
       return;
+    }
+
+    // ★ 记录宿主 origin（用于跳转）
+    if (event.origin && event.origin !== 'null') {
+      this.hostOrigin = event.origin;
     }
 
     try {
@@ -368,6 +374,15 @@ export class ReminderEngineService {
       },
       error: (error) => console.error('[ReminderEngine] 确认已知晓失败:', error)
     });
+  }
+
+  // ── 获取宿主 origin（用于跳转）────────────────────────
+  getHostOrigin(): string {
+    if (this.hostOrigin && this.hostOrigin !== 'null') {
+      return this.hostOrigin;
+    }
+    // 回退到默认值
+    return 'http://10.35.4.10:60000';
   }
 
   // ── 工具方法 ──────────────────────────────────────────
